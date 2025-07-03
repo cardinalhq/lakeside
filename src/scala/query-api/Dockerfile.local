@@ -1,6 +1,6 @@
 FROM eclipse-temurin:17-jdk-jammy AS builder
 
-COPY build/libs/cardinal-backend-query-api.jar application.jar
+COPY build/libs/lakeside-query-api.jar application.jar
 RUN java -Djarmode=layertools -jar application.jar extract
 
 FROM eclipse-temurin:17-jdk-jammy
