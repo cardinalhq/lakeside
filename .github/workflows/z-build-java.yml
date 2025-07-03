@@ -1,0 +1,71 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: z- Build a JDK project
+
+on:
+  workflow_call:
+    inputs:
+      tag-to-build:
+        type: string
+        required: true
+      java-version:
+        type: string
+        required: true
+      release-type:
+        type: string
+        required: true
+
+
+jobs:
+
+  build:
+    runs-on:
+      group: larger-runners
+    
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags so we get the right version
+          fetch-tags: true
+          ref: ${{ inputs.tag-to-build }}
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: ${{ inputs.java-version }}
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew`
+        run: chmod +x gradlew
+
+      - uses: ./.github/actions/determine-release-tag
+        id: determine-release-tag
+        with:
+          release-type: ${{ inputs.release-type }}
+          should-create-tag: false
+
+      - name: Build with Gradle
+        run: ./gradlew -Pversion=${{ steps.determine-release-tag.outputs.tag}} build build --parallel --build-cache --no-daemon -Dorg.gradle.jvmargs="-Xlog:library=info -Xlog:jfr=info"
+
+      - name: Upload All build/libs Directories
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-build-libs
+          path: '**/build/libs/**'
+          retention-days: 1
+

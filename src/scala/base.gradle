@@ -1,0 +1,29 @@
+apply from: file('../ext.gradle')
+
+dependencies {
+    annotationProcessor "org.springframework.boot:spring-boot-configuration-processor"
+    implementation platform("com.typesafe.akka:akka-bom_$scalaVersion:$akkaVersion")
+
+    implementation "joda-time:joda-time:${jodaVersion}"
+    implementation "com.lightbend.akka.discovery:akka-discovery-kubernetes-api_${scalaVersion}:${akkaManagementVersion}"
+    implementation "com.lihaoyi:ujson_$scalaVersion:${ujsonVersion}"
+    implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+    implementation "org.scala-lang:scala-library:$scalaFullVersion"
+    implementation "org.scala-lang:scala-reflect:$scalaFullVersion"
+    implementation "com.amazonaws:aws-java-sdk-dynamodb:$dynamoDbVersion"
+    implementation "org.duckdb:duckdb_jdbc:$duckDbVersion"
+    implementation "com.github.ben-manes.caffeine:caffeine:$caffeineVersion"
+    implementation "com.datadoghq:sketches-java:$ddSketchVersion"
+
+    implementation "com.typesafe.akka:akka-serialization-jackson_${scalaVersion}"
+    implementation "com.netflix.atlas_v1:atlas-spring-akka_$scalaVersion:$atlasVersion"
+    implementation "com.google.re2j:re2j:${re2jVersion}"
+
+    implementation "org.springframework.boot:spring-boot-starter-log4j2:$springVersion"
+    implementation "org.springframework.boot:spring-boot-starter:$springVersion"
+    implementation "org.springframework.boot:spring-boot-starter-cache:$springVersion"
+
+    implementation 'com.datadoghq:java-dogstatsd-client:4.1.0'
+    testImplementation "org.scalatest:scalatest_$scalaVersion:$scalaTestVersion"
+    testImplementation "org.springframework.boot:spring-boot-starter-test"
+}

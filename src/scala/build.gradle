@@ -1,0 +1,90 @@
+allprojects {
+	apply plugin: 'java'
+	apply plugin: 'scala'
+	apply plugin: 'idea'
+
+	repositories {
+		mavenCentral()
+		maven {
+			url "https://repo.spring.io/release"
+		}
+		maven {
+			url "https://repository.jboss.org/maven2"
+		}
+	}
+
+	java {
+		toolchain {
+			languageVersion = JavaLanguageVersion.of(17)
+		}
+	}
+
+	configurations.configureEach {
+		exclude group: 'ch.qos.logback', module: 'logback-classic'
+		exclude group: 'ch.qos.logback', module: 'logback-core'
+		exclude group: 'org.apache.logging.log4j', module: 'log4j-to-slf4j'
+		exclude group: 'org.slf4j', module: 'slf4j-log4j12'
+		exclude group: 'org.slf4j', module: 'slf4j-reload4j'
+
+		resolutionStrategy {
+			force 'com.typesafe.akka:akka-http-core_2.13:10.2.10'
+			force 'com.typesafe.akka:akka-http-spray-json_2.13:10.2.10'
+		}
+	}
+
+	// Version generation task
+	tasks.register('generateVersionFile') {
+		def versionFile = file("$buildDir/generated/version.properties")
+		inputs.property("version", version)
+		outputs.file(versionFile)
+
+		doLast {
+			versionFile.parentFile.mkdirs()
+			versionFile.text = "version=${project.version}"
+		}
+	}
+
+	// Ensure the task runs before compiling and processing resources
+	//compileJava.dependsOn(generateVersionFile)
+	//processResources.dependsOn(generateVersionFile)
+	// Explicitly declare dependencies
+	tasks.named('processResources') {
+		dependsOn tasks.named('compileJava')
+		dependsOn tasks.named('compileScala')
+		dependsOn tasks.named('generateVersionFile')
+	}
+
+	sourceSets {
+		main {
+			resources {
+				srcDir "$buildDir/generated"
+			}
+		}
+	}
+}
+
+ext {
+	scalaFullVersion = '2.13.16'
+}
+
+dependencies {
+	implementation "org.scala-lang:scala-library:$scalaFullVersion"
+	implementation "org.scala-lang:scala-reflect:$scalaFullVersion"
+	// SLF4J API
+	implementation 'org.slf4j:slf4j-api:1.7.36'
+
+	// Log4j 2 API and Core implementation
+	implementation 'org.apache.logging.log4j:log4j-api:2.20.0'
+	implementation 'org.apache.logging.log4j:log4j-core:2.20.0'
+
+	// SLF4J binding for Log4j 2
+	implementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.20.0'
+}
+
+idea {
+	project {
+		jdkName = '17'
+	}
+}
+
+

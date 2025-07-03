@@ -1,0 +1,73 @@
+buildscript {
+    repositories {
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+    dependencies {
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:2.7.12"
+    }
+}
+
+apply plugin: "application"
+apply plugin: "java"
+apply plugin: "scala"
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+
+apply from: file('../base.gradle')
+
+group = "com.cardinal.queryapi"
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    scalaTestVersion = '3.3.0-SNAP3'
+}
+
+dependencies {
+    implementation project(":lakeside-core")
+    implementation "com.github.ben-manes.caffeine:caffeine:${caffeineVersion}"
+
+    implementation 'com.netflix.iep:iep-nflxenv:4.2.0'
+    implementation 'com.netflix.iep:iep-service:4.0.4'
+    implementation 'com.netflix.iep:iep-spring:4.0.4'
+    implementation 'com.netflix.iep:iep-spring-atlas:4.0.4'
+    implementation 'com.zaxxer:HikariCP:5.0.1'
+    implementation "org.postgresql:postgresql:${postgresqlVersion}"
+
+    implementation 'org.xerial.snappy:snappy-java:1.1.10.4'
+    implementation 'net.java.dev.jna:jna:5.12.1'
+    implementation 'com.google.guava:guava:32.1.2-jre'
+    implementation 'io.kubernetes:client-java:15.0.1'
+    implementation 'org.apache.datasketches:datasketches-java:4.2.0'
+    testImplementation 'com.vladsch.flexmark:flexmark-all:0.35.10'
+    implementation 'org.apache.datasketches:datasketches-java:4.2.0'
+    implementation 'org.apache.commons:commons-math3:3.6.1'
+    implementation 'io.opentracing:opentracing-api:0.33.0'
+    implementation 'io.opentracing:opentracing-util:0.33.0'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+}
+
+bootJar {
+    duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+}
+
+distTar {
+    duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+}
+
+distZip {
+    duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+}

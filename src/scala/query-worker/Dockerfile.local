@@ -1,0 +1,23 @@
+FROM eclipse-temurin:17-jdk-jammy AS builder
+
+COPY build/libs/cardinal-backend-query-worker.jar application.jar
+RUN java -Djarmode=layertools -jar application.jar extract
+
+FROM eclipse-temurin:17-jdk-jammy
+
+EXPOSE 7101
+
+COPY libs/linux-amd64/lib-trigram.h /app/libs/lib-trigram.h
+COPY libs/linux-amd64/lib-trigram.so /app/libs/lib-trigram.so
+
+RUN curl -fsSL "https://extensions.duckdb.org/v1.2.0/linux_amd64_gcc4/httpfs.duckdb_extension.gz" \
+    | gunzip -c > /app/libs/httpfs.duckdb_extension
+
+RUN chmod -R a+rx /app
+
+COPY --from=builder dependencies/ ./
+COPY --from=builder snapshot-dependencies/ ./
+COPY --from=builder spring-boot-loader/ ./
+COPY --from=builder application/ ./
+
+CMD ["java", "-XX:+ExitOnOutOfMemoryError", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints", "-Dcom.sun.management.jmxremote", "-Dcom.sun.management.jmxremote.authenticate=false", "-Dcom.sun.management.jmxremote.ssl=false", "-Dcom.sun.management.jmxremote.port=9875", "-Dcom.sun.management.jmxremote.rmi.port=9875", "-Djava.rmi.server.hostname=localhost", "org.springframework.boot.loader.JarLauncher"]

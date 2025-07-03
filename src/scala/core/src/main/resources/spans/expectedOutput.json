@@ -1,0 +1,94 @@
+{
+  "spanKey": {
+    "spanName": "http.request",
+    "spanKind": "Client",
+    "service": "android-api",
+    "resource": "GET <>//<>/movie/<>"
+  },
+  "children": [
+    {
+      "spanKey": {
+        "spanName": "express.request",
+        "spanKind": "Server",
+        "service": "api-gateway",
+        "resource": "GET /movie/<>Id"
+      },
+      "children": [
+        {
+          "spanKey": {
+            "spanName": "express.middleware",
+            "spanKind": "Unspecified",
+            "service": "api-gateway",
+            "resource": ""
+          }
+        },
+        {
+          "spanKey": {
+            "spanName": "express.middleware",
+            "spanKind": "Unspecified",
+            "service": "api-gateway",
+            "resource": ""
+          },
+          "children": [
+            {
+              "spanKey": {
+                "spanName": "express.middleware",
+                "spanKind": "Unspecified",
+                "service": "api-gateway",
+                "resource": ""
+              },
+              "children": [
+                {
+                  "spanKey": {
+                    "spanName": "http.request",
+                    "spanKind": "Client",
+                    "service": "api-gateway",
+                    "resource": "GET <>//<>/license/validate/<>"
+                  },
+                  "children": [
+                    {
+                      "spanKey": {
+                        "spanName": "express.request",
+                        "spanKind": "Server",
+                        "service": "license-service",
+                        "resource": "GET /license/validate/<>Id"
+                      },
+                      "children": [
+                        {
+                          "spanKey": {
+                            "spanName": "express.middleware",
+                            "spanKind": "Unspecified",
+                            "service": "license-service",
+                            "resource": ""
+                          }
+                        },
+                        {
+                          "spanKey": {
+                            "spanName": "express.middleware",
+                            "spanKind": "Unspecified",
+                            "service": "license-service",
+                            "resource": ""
+                          },
+                          "children": [
+                            {
+                              "spanKey": {
+                                "spanName": "express.middleware",
+                                "spanKind": "Unspecified",
+                                "service": "license-service",
+                                "resource": ""
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

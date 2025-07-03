@@ -1,0 +1,38 @@
+buildscript {
+    repositories {
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+    dependencies {
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:2.7.12"
+    }
+}
+
+apply plugin: "application"
+apply plugin: "java"
+apply plugin: "scala"
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+
+apply from: file('../base.gradle')
+
+group = "com.cardinal.queryworker"
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(":lakeside-core")
+    implementation 'com.netflix.iep:iep-nflxenv:4.0.4'
+    implementation 'com.netflix.iep:iep-service:4.0.4'
+    implementation 'com.netflix.iep:iep-spring:4.0.4'
+    implementation 'com.netflix.iep:iep-spring-atlas:4.0.4'
+    implementation "com.github.ben-manes.caffeine:caffeine:${caffeineVersion}"
+    implementation "org.postgresql:postgresql:${postgresqlVersion}"
+}
+
+test {
+    useJUnitPlatform()
+}

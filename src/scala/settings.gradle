@@ -1,0 +1,10 @@
+rootProject.name = 'lakeside'
+
+include "core"
+project(":core").name = "lakeside-core"
+
+include "query-api"
+project(":query-api").name = "lakeside-query-api"
+
+include "query-worker"
+project(":query-worker").name = "lakeside-query-worker"

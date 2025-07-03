@@ -1,0 +1,103 @@
+buildscript {
+    repositories {
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
+    }
+}
+
+apply plugin: "java"
+apply plugin: "scala"
+apply plugin: "antlr"
+
+repositories {
+    mavenCentral()
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+apply from: file('../ext.gradle')
+
+configurations.configureEach {
+    resolutionStrategy {
+        force "com.typesafe.akka:akka-discovery_${scalaVersion}:2.6.19"
+        force "com.typesafe.akka:akka-pki_${scalaVersion}:2.6.19"
+    }
+}
+
+dependencies {
+    antlr("org.antlr:antlr4:${antlrVersion}")
+    implementation files('libs/spectator-reg-atlas-1.7.0-SNAPSHOT.jar')
+
+    implementation "com.github.ben-manes.caffeine:caffeine:${caffeineVersion}"
+    implementation platform('com.amazonaws:aws-java-sdk-bom:1.12.746')
+    implementation "com.google.guava:guava:33.4.8-jre"
+
+    implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+    implementation "com.google.protobuf:protobuf-java-util:${protobufVersion}"
+
+    implementation "com.netflix.atlas_v1:atlas-json_$scalaVersion:$atlasVersion"
+    implementation "com.typesafe:config:1.4.2"
+    implementation 'com.amazonaws:aws-java-sdk-timestreamwrite'
+    implementation 'com.amazonaws:aws-java-sdk-s3'
+    implementation 'com.amazonaws:aws-java-sdk-sts'
+    implementation "joda-time:joda-time:${jodaVersion}"
+
+    implementation "com.lightbend.akka.discovery:akka-discovery-kubernetes-api_${scalaVersion}:${akkaManagementVersion}"
+    implementation "com.netflix.atlas_v1:atlas-spring-akka_$scalaVersion:$atlasVersion"
+    implementation 'com.datadoghq:java-dogstatsd-client:4.1.0'
+    implementation 'net.java.dev.jna:jna:5.12.1'
+    implementation "com.lihaoyi:ujson_$scalaVersion:${ujsonVersion}"
+    implementation 'io.burt:jmespath-jackson:0.5.1'
+    implementation "com.google.re2j:re2j:${re2jVersion}"
+    implementation 'com.maxmind.geoip2:geoip2:4.0.1'
+    implementation 'com.datadoghq:sketches-java:0.8.2'
+    implementation 'org.lwjgl:lwjgl-xxhash:3.3.2'
+    implementation 'org.apache.datasketches:datasketches-java:4.2.0'
+    implementation 'org.rocksdb:rocksdbjni:9.4.0'
+    implementation "org.postgresql:postgresql:${postgresqlVersion}"
+    implementation 'com.zaxxer:HikariCP:5.0.1'
+    implementation 'software.amazon.awssdk:aws-core:2.20.109'
+    implementation 'software.amazon.awssdk:ecs:2.20.109'
+    implementation "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml"
+
+    implementation "org.scala-lang:scala-library:$scalaFullVersion"
+    implementation "org.scala-lang:scala-reflect:$scalaFullVersion"
+    implementation "org.duckdb:duckdb_jdbc:$duckDbVersion"
+    implementation "org.springframework.boot:spring-boot:$springVersion"
+    implementation "org.springframework.boot:spring-boot-autoconfigure:$springVersion"
+    implementation "org.springframework.boot:spring-boot-starter-cache:$springVersion"
+    implementation "org.springframework.boot:spring-boot-starter-log4j2:$springVersion"
+    implementation 'org.apache.commons:commons-compress:1.26.0'
+    implementation 'org.apache.commons:commons-math3:3.6.1'
+    implementation 'com.auth0:java-jwt:4.4.0'
+
+    implementation "io.opentelemetry:opentelemetry-api:${otelVersion}"
+    implementation "io.opentelemetry:opentelemetry-sdk:${otelVersion}"
+    implementation "io.opentelemetry:opentelemetry-sdk-metrics:${otelVersion}"
+    implementation "io.opentelemetry:opentelemetry-exporter-otlp:${otelVersion}"
+    implementation "io.opentelemetry:opentelemetry-semconv:1.30.1-alpha"
+
+    testImplementation "org.springframework.boot:spring-boot-starter-test:$springVersion"
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+
+    testImplementation "org.scalatest:scalatest_$scalaVersion:$scalaTestVersion"
+    testImplementation "org.scalatestplus:mockito-3-4_2.13:$scalatestplusMockito"
+    testImplementation "org.mockito:mockito-core:5.5.0"
+
+    testImplementation 'com.vladsch.flexmark:flexmark-all:0.35.10'
+}
+
+test {
+    useJUnitPlatform() // Ensures JUnit 5 tests are discovered
+
+    // Additional logging options
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+}
