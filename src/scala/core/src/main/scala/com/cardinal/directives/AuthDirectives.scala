@@ -6,10 +6,18 @@ import akka.http.scaladsl.server.{Directive1, Directives}
 import com.cardinal.auth.AuthToken
 import com.cardinal.utils.Commons._
 import com.netflix.atlas.akka.WebApi
+import org.springframework.stereotype.Component
 
 import scala.concurrent.{ExecutionContext, Future}
 
-abstract class AuthDirectives(actorSystem: ActorSystem) extends WebApi with Directives {
+/**
+ * Now takes an ApiKeyAuth which Spring will inject
+ * (either DefaultApiKeyAuth or NoOpApiKeyAuth).
+ */
+@Component
+abstract class AuthDirectives(actorSystem: ActorSystem, apiKeyAuth: ApiKeyAuth)
+  extends WebApi with Directives {
+
   implicit val as: ActorSystem      = actorSystem
   implicit val ec: ExecutionContext = actorSystem.dispatcher
 
@@ -17,7 +25,6 @@ abstract class AuthDirectives(actorSystem: ActorSystem) extends WebApi with Dire
     optionalCookie(AUTH_TOKEN_HEADER).flatMap {
       case Some(cookie) =>
         val tokenString = cookie.value
-
         onSuccess(Future { AuthToken.validate(tokenString) }).flatMap {
           case null =>
             complete(HttpResponse(StatusCodes.Unauthorized, entity = "Invalid auth token"))
@@ -36,6 +43,7 @@ abstract class AuthDirectives(actorSystem: ActorSystem) extends WebApi with Dire
         }
 
       case None =>
-        complete(HttpResponse(StatusCodes.Unauthorized, entity = "Missing auth token"))
+        // **here** we delegate to whatever ApiKeyAuth was wired in
+        apiKeyAuth.checkApiKey
     }
 }
