@@ -3,31 +3,29 @@ package com.cardinal.directives
 import akka.http.scaladsl.model.{HttpResponse, StatusCodes}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Directive1
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import com.cardinal.utils.Commons.API_KEY_HEADER
+import org.springframework.boot.autoconfigure.condition.{ConditionalOnExpression, ConditionalOnProperty}
 import org.springframework.stereotype.Component
 
-/**
- * Enabled when `auth.apikey.enabled=true` in application.yml.
- */
 @Component
-@ConditionalOnProperty(name = Array("auth.apikey.enabled"), havingValue = "true")
-class DefaultApiKeyAuth extends ApiKeyAuth {
+@ConditionalOnProperty(
+  name = Array("auth.apikey.enabled"),
+  havingValue = "true"
+)
+// only load if the OS‐level env var APIKEY_FILE is *absent*
+@ConditionalOnExpression("#{systemEnvironment['APIKEY_FILE'] == null}")
+class DatabaseApiKeyAuth extends ApiKeyAuth {
   override def checkApiKey: Directive1[String] =
     optionalHeaderValueByName(API_KEY_HEADER).flatMap {
       case Some(apiKey) =>
         ApiKeyCache.getCustomerId(apiKey) match {
           case Some(customerId) =>
-            DEMO_ORG_ID match {
-              case Some(demoOrgId) if customerId == demoOrgId =>
-                complete(HttpResponse(StatusCodes.Unauthorized, "Unauthorized access for demo organization"))
-              case _ =>
-                provide(customerId)
-            }
+            provide(customerId)
           case None =>
-            complete(HttpResponse(StatusCodes.Unauthorized, "Invalid apiKey"))
+            complete(HttpResponse(StatusCodes.Unauthorized, entity = "Invalid API key"))
         }
 
       case None =>
-        complete(HttpResponse(StatusCodes.Unauthorized, "Missing or invalid API key"))
+        complete(HttpResponse(StatusCodes.Unauthorized, entity = "Missing or invalid API key"))
     }
 }

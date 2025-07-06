@@ -12,7 +12,7 @@ import scala.concurrent.{ExecutionContext, Future}
 
 /**
  * Now takes an ApiKeyAuth which Spring will inject
- * (either DefaultApiKeyAuth or NoOpApiKeyAuth).
+ * (either DatabaseApiKeyAuth or NoOpApiKeyAuth).
  */
 @Component
 abstract class AuthDirectives(actorSystem: ActorSystem, apiKeyAuth: ApiKeyAuth)
@@ -43,7 +43,6 @@ abstract class AuthDirectives(actorSystem: ActorSystem, apiKeyAuth: ApiKeyAuth)
         }
 
       case None =>
-        // **here** we delegate to whatever ApiKeyAuth was wired in
         apiKeyAuth.checkApiKey
     }
 }

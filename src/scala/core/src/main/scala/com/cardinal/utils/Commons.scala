@@ -63,6 +63,7 @@ object Commons {
   val TEN_SECONDS_MILLIS: Int = 10000
   val AUTH_TOKEN_HEADER = "cardinal_token"
   val AUTH_TOKEN_ORG_ID_CLAIM = "org_id"
+  val API_KEY_HEADER = "Api-Key"
   val DEFAULT_CUSTOMER_ID = "cardinalhq.io"
   val CARDINALHQ_ENVIRONMENT: String = sys.env.getOrElse("CARDINALHQ_ENVIRONMENT", "test")
   val CONTROL_PLANE_HOST: String = sys.env.getOrElse("CONTROL_PLANE_HOST",s"control-plane.global.aws.$CARDINALHQ_ENVIRONMENT.cardinalhq.net")
@@ -75,7 +76,6 @@ object Commons {
   val QUERY_WORKER_CLUSTER = "QUERY_WORKER_CLUSTER"
   val QUERY_WORKER_PORT = 7101
   val QUERY_WORKER_HEARTBEAT = "/api/internal/heartbeat"
-
 
   val DESCENDING = "DESC"
 
