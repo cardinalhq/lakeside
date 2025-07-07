@@ -8,7 +8,7 @@ import akka.http.scaladsl.server.{Route, StandardRoute}
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import com.cardinal.auth.AuthToken
-import com.cardinal.directives.AuthDirectives
+import com.cardinal.directives.{ApiKeyAuth, AuthDirectives}
 import com.cardinal.instrumentation.Metrics.recordExecutionTime
 import com.cardinal.logs.LogCommons.{EXISTS, STRING_TYPE}
 import com.cardinal.model._
@@ -19,7 +19,7 @@ import com.cardinal.queryapi.engine.SegmentCacheManager.updateTotalQueryTime
 import com.cardinal.queryapi.engine.{QueryEngineV2, SegmentCacheManager}
 import com.cardinal.utils.Commons
 import com.cardinal.utils.Commons._
-import com.cardinal.utils.ast.ASTUtils.{toASTInput, toBaseExpr, BinaryClause, Filter}
+import com.cardinal.utils.ast.ASTUtils.{BinaryClause, Filter, toASTInput, toBaseExpr}
 import com.cardinal.utils.ast.BaseExpr
 import com.netflix.atlas.json.Json
 import io.opentracing.util.GlobalTracer
@@ -34,7 +34,7 @@ import scala.concurrent.duration.DurationInt
 
 @Component
 @DependsOn(Array("storageProfileCache"))
-class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2) extends AuthDirectives(actorSystem) {
+class QueryApi @Autowired()(actorSystem: ActorSystem, apiKeyAuth: ApiKeyAuth, queryEngine: QueryEngineV2) extends AuthDirectives(actorSystem, apiKeyAuth) {
   private val logger = LoggerFactory.getLogger(getClass)
 
   private def scopeTags: Route = {

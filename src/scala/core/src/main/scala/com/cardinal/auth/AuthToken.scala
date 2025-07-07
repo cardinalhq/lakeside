@@ -12,9 +12,17 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.util.Try
 
 object AuthToken {
-
   private val issuer = "cardinalhq.io"
-  private val algorithm = Algorithm.HMAC256("D35623990536211F8EA473B42ED115A124906F538C00B86BF3DA13810E55AD59")
+
+  // Load the HMAC256 key from the environment (throws if missing)
+  private val secretKey: String =
+    sys.env.getOrElse(
+      "TOKEN_HMAC256_KEY",
+      throw new IllegalStateException("Environment variable TOKEN_HMAC256_KEY must be set")
+    )
+
+  private val algorithm: Algorithm = Algorithm.HMAC256(secretKey)
+
   private val jwtVerifier: JWTVerifier =
     JWT
       .require(algorithm)
@@ -23,32 +31,27 @@ object AuthToken {
 
   private val orgIdTokens = new ConcurrentHashMap[String, String]()
 
-  def validate(tokenString: String): DecodedJWT = {
+  def validate(tokenString: String): DecodedJWT =
     try {
       jwtVerifier.verify(tokenString)
-    }
-    catch {
+    } catch {
       case e: Exception =>
         throw new RuntimeException(e)
     }
-  }
 
   def getAuthHeader(orgId: String): Seq[RawHeader] = {
-    var token = orgIdTokens.computeIfAbsent(orgId, (_: String) => {
-      issue(orgId)
-    })
+    var token = orgIdTokens.computeIfAbsent(orgId, (_: String) => issue(orgId))
     token = Try(validate(token).getToken).getOrElse(issue(orgId))
     orgIdTokens.put(orgId, token)
 
-    Seq[RawHeader](RawHeader(name = "Cookie", value = s"$AUTH_TOKEN_HEADER=$token"))
+    Seq(RawHeader(name = "Cookie", value = s"$AUTH_TOKEN_HEADER=$token"))
   }
 
-  private def issue(orgId: String) = {
+  private def issue(orgId: String): String =
     JWT
       .create()
       .withIssuer(issuer)
       .withClaim(AUTH_TOKEN_ORG_ID_CLAIM, orgId)
       .withExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS))
       .sign(algorithm)
-  }
 }

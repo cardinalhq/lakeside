@@ -733,7 +733,7 @@ class QueryEngineV2(
                 s" AND organization_id = '${request.customerId}'" +
                 s" AND published = true"
               val s = System.currentTimeMillis()
-              val connection = DBDataSources.getMetadataSource.getConnection
+              val connection = DBDataSources.getLRDBSource.getConnection
 
               val statement = connection.prepareStatement(query)
               val resultSet = statement.executeQuery()
@@ -824,7 +824,7 @@ class QueryEngineV2(
     var resultSet: ResultSet = null
     try {
       val start = System.currentTimeMillis()
-      connection = DBDataSources.getMetadataSource.getConnection
+      connection = DBDataSources.getLRDBSource.getConnection
       connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE)
       val segmentIdColumn = if (baseExpr.dataset == METRICS) "timebox" else "segment_id"
 
