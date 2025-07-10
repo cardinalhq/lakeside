@@ -12,10 +12,6 @@ apply plugin: "antlr"
 
 repositories {
     mavenCentral()
-}
-
-repositories {
-    mavenCentral()
     mavenLocal()
 }
 
@@ -40,7 +36,7 @@ dependencies {
     implementation "com.google.protobuf:protobuf-java-util:${protobufVersion}"
 
     implementation "io.fabric8:kubernetes-client:7.3.1"
-    implementation 'org.bouncycastle:bcprov-jdk15on:1.81'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.81'
     implementation 'org.bouncycastle:bcpkix-jdk18on:1.81'
 
     implementation "com.netflix.atlas_v1:atlas-json_$scalaVersion:$atlasVersion"

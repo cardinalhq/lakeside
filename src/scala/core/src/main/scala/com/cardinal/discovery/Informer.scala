@@ -106,28 +106,28 @@ object EndpointSliceInformerWatcher {
   }
 }
 
-object TestInformer extends App {
-  implicit val system: ActorSystem = ActorSystem("TestInformerSystem")
-  implicit val mat: Materializer = Materializer(system)
-  implicit val ec = system.dispatcher
-
-  // 1. Start the watcher and insert a KillSwitch
-  val (killSwitch, doneFuture) = EndpointSliceInformerWatcher
-    .startWatching("lakerunner-query-worker", "cardinalhq-datalake")
-    .viaMat(KillSwitches.single)(Keep.right)
-    .toMat(Sink.foreach { state: ClusterState =>
-      println(s"=== ClusterState @ ${java.time.Instant.now()} ===")
-      println(s"  Added:   ${state.added.map(_.ip).mkString(", ")}")
-      println(s"  Removed: ${state.removed.map(_.ip).mkString(", ")}")
-      println(s"  Current: ${state.current.map(_.ip).mkString(", ")}")
-      println()
-    })(Keep.both)
-    .run()
-
-  // 2. Schedule shutdown in 5 minutes
-  system.scheduler.scheduleOnce(5.minutes) {
-    println("⏳ Time’s up — shutting down stream and actor system.")
-    killSwitch.shutdown() // stops the stream
-    system.terminate() // tears down Akka
-  }
-}
+//object TestInformer extends App {
+//  implicit val system: ActorSystem = ActorSystem("TestInformerSystem")
+//  implicit val mat: Materializer = Materializer(system)
+//  implicit val ec = system.dispatcher
+//
+//  // 1. Start the watcher and insert a KillSwitch
+//  val (killSwitch, doneFuture) = EndpointSliceInformerWatcher
+//    .startWatching("lakerunner-query-worker", "cardinalhq-datalake")
+//    .viaMat(KillSwitches.single)(Keep.right)
+//    .toMat(Sink.foreach { state: ClusterState =>
+//      println(s"=== ClusterState @ ${java.time.Instant.now()} ===")
+//      println(s"  Added:   ${state.added.map(_.ip).mkString(", ")}")
+//      println(s"  Removed: ${state.removed.map(_.ip).mkString(", ")}")
+//      println(s"  Current: ${state.current.map(_.ip).mkString(", ")}")
+//      println()
+//    })(Keep.both)
+//    .run()
+//
+//  // 2. Schedule shutdown in 5 minutes
+//  system.scheduler.scheduleOnce(5.minutes) {
+//    println("⏳ Time’s up — shutting down stream and actor system.")
+//    killSwitch.shutdown() // stops the stream
+//    system.terminate() // tears down Akka
+//  }
+//}
