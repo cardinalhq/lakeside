@@ -1,31 +1,24 @@
 package com.cardinal.config
 
 import akka.actor.ActorSystem
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.HttpRequest
-import akka.http.scaladsl.unmarshalling.sse.EventStreamParser
-import akka.stream.RestartSettings
-import akka.stream.scaladsl.{RestartSource, Source}
-import com.cardinal.auth.AuthToken
+import com.cardinal.dbutils.DBDataSources.getConfigSource
 import com.cardinal.model.StorageProfile
-import com.cardinal.utils.Commons.{CARDINAL_REGIONAL_DEPLOYMENT_ID, CONTROL_PLANE_HOST}
-import com.cardinal.utils.ControlPlaneEndpoints.STORAGE_PROFILES_ENDPOINT
 import com.netflix.atlas.json.Json
 import org.slf4j.LoggerFactory
 
+import java.sql.{Connection, Statement}
 import java.util.concurrent.atomic.AtomicReference
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.util.control.NonFatal
 
 class StorageProfileCacheControlPlane(actorSystem: ActorSystem) extends StorageProfileCache  {
-
   implicit val as: ActorSystem = actorSystem
   implicit val ec: ExecutionContext = as.dispatcher
 
   private val logger = LoggerFactory.getLogger(getClass)
-
   private val cacheByOrgCollectorBucket = new AtomicReference[Map[String, StorageProfile]](Map.empty)
   private val cacheByBucket = new AtomicReference[Map[String, StorageProfile]](Map.empty)
   private val cacheByOrgIdInstanceNum = new AtomicReference[Map[(String, Int), StorageProfile]](Map.empty)
@@ -67,89 +60,93 @@ class StorageProfileCacheControlPlane(actorSystem: ActorSystem) extends StorageP
     s"$orgId-$collectorId-$bucket"
   }
 
-  def start(): Unit = {
-    RestartSource
-      .withBackoff(RestartSettings(1.seconds, 3.seconds, 0.3))(() => {
-        Source
-          .single(
-            HttpRequest(
-              uri = STORAGE_PROFILES_ENDPOINT,
-              headers = AuthToken.getAuthHeader(CARDINAL_REGIONAL_DEPLOYMENT_ID)
-            )
-          )
-          .via(
-            if (CONTROL_PLANE_HOST.startsWith("localhost")) {
-              val hostParts = CONTROL_PLANE_HOST.split(":")
-              Http().outgoingConnection(host = hostParts(0), port = hostParts(1).toInt)
-            } else {
-              Http().outgoingConnectionHttps(host = CONTROL_PLANE_HOST)
-            }
-          )
-          .flatMapConcat(response => response.entity.dataBytes)
-          .via(EventStreamParser(maxLineSize = Int.MaxValue, maxEventSize = Int.MaxValue))
-          .map {
-            sse =>
-              val incomingPayload = ujson.read(sse.data)
-              try {
-                incomingPayload("type").str match {
-                  case "heartbeat" =>
-                    None
-                  case _ =>
-                    val profiles = Json.decode[Map[String, StorageProfile]](ujson.write(incomingPayload("message")))
-                    cacheByOrgCollectorBucket.set(profiles)
+  private def loadProfilesFromDb(): Seq[StorageProfile] = {
+    val profiles = List.newBuilder[StorageProfile]
+    var conn: Connection    = null
+    var stmt: Statement     = null
 
-                    val mapByInstanceNum = mutable.Map.empty[(String, Int), StorageProfile]
-                    val mapByBucket = mutable.Map.empty[String, StorageProfile]
-                    val mapByOrgId = mutable.Map.empty[String, ListBuffer[StorageProfile]]
+    val sql = "SELECT c.id as collector_uuid, c.external_id as collector_id, c.instance_num as instance_num," +
+      " sp.organization_id as organization_id, sp.id as storage_profile_id," +
+      " sp.bucket as bucket, sp.cloud_provider as cloud_provider, sp.region as region, sp.hosted as hosted, sp.properties as storage_profile_properties, sp.role as role," +
+      " c.type as type" +
+      " FROM c_storage_profiles sp left outer join c_collectors c on   c.storage_profile_id = sp.id where c.deleted_at is null"
 
-                    profiles.values.foreach(sp => {
-                      //only placing storage profiles linked to a collector
-                      if (sp.instanceNum.nonEmpty){
-                        mapByInstanceNum.put((sp.organizationId, sp.instanceNum.get), sp)
-                      }
-                      //only putting native buckets in this map.
-                      // if SAAS, cardinal should have one storage profile per saas bucket, pull info from that SP
-                      if (!sp.hosted){
-                        mapByBucket.put(sp.bucket, sp)
-                      }
-                      //only placing storage profiles linked to a collector
-                      if (sp.instanceNum.nonEmpty) {
-                        mapByOrgId.getOrElseUpdate(sp.organizationId, ListBuffer.empty) += sp
-                      }
-                    })
+    try {
+      conn  = getConfigSource.getConnection
+      stmt  = conn.createStatement()
+      val rs = stmt.executeQuery(sql)
+      while (rs.next()) {
+        val collectorUuid  = Option(rs.getString("collector_uuid"))
+        val collectorId    = Option(rs.getString("collector_id"))
+        val instanceNumRaw = rs.getInt("instance_num")
+        val instanceNum    = if (rs.wasNull()) None else Some(instanceNumRaw)
 
-                    cacheByOrgIdInstanceNum.set(mapByInstanceNum.toMap)
-                    cacheByBucket.set(mapByBucket.toMap)
-                    storageProfilesByOrgId.set(mapByOrgId.map(kv => kv._1 -> kv._2.toList).toMap)
-                    Some("")
-                }
-              } catch {
-                case e: Exception =>
-                  logger.error("Error applying update", e)
-                  Some("")
-              }
-          }
-      })
-      .runForeach { _ =>
-        }
-      .recover {
-        case e: Exception =>
-          logger.error(s"Stream failed with exception ${e.getMessage}", e)
+        // … pull out the rest of the columns …
+        val spPropertiesJson = rs.getString("storage_profile_properties")
+        val spProperties     = Json.decode[Map[String, Object]](spPropertiesJson)
+
+        profiles += StorageProfile(
+          collectorUuid, collectorId, instanceNum,
+          rs.getString("organization_id"),
+          rs.getString("storage_profile_id"),
+          rs.getString("bucket"),
+          rs.getString("cloud_provider"),
+          rs.getString("region"),
+          rs.getBoolean("hosted"),
+          spProperties,
+          rs.getString("role"),
+          rs.getInt("type"),
+          endpoint = None
+        )
       }
-
-    while (cacheByOrgIdInstanceNum.get().isEmpty || storageProfilesByOrgId.get().isEmpty || cacheByOrgCollectorBucket
-             .get()
-             .isEmpty) {
-      logger.info("Waiting for StorageProfileCache to get populated...")
-      Thread.sleep(1000)
+      rs.close()
+      profiles.result()
+    } catch {
+      case NonFatal(e) =>
+        logger.error("Error polling storage profiles from DB", e)
+        Seq.empty
+    } finally {
+      if (stmt != null) stmt.close()
+      if (conn  != null) conn.close()
     }
-    logger.info("Done waiting for storage profiles...")
-    // Logging the profiles in cacheByOrgCollectorBucket
-    val profiles = cacheByBucket.get()
-    if (profiles.nonEmpty) {
-      logger.info(s"Profiles in cacheByBucket: ${profiles.mkString(", ")}")
-    } else {
-      logger.info("No profiles found in cacheByBucket.")
+  }
+
+  /** Given a flat Seq of profiles, rebuild all of your cache maps. */
+  private def refreshCaches(profiles: Seq[StorageProfile]): Unit = {
+    val byOrgColBucket = mutable.Map.empty[String, StorageProfile]
+    val byBucket       = mutable.Map.empty[String, StorageProfile]
+    val byOrgIdInst    = mutable.Map.empty[(String, Int), StorageProfile]
+    val byOrgIdList    = mutable.Map.empty[String, ListBuffer[StorageProfile]]
+
+    profiles.foreach { sp =>
+      sp.instanceNum.foreach(i => byOrgIdInst((sp.organizationId, i)) = sp)
+      if (!sp.hosted)                   byBucket(sp.bucket) = sp
+      sp.instanceNum.foreach { _ =>
+        val buf = byOrgIdList.getOrElseUpdate(sp.organizationId, ListBuffer.empty)
+        buf += sp
+      }
+      sp.collectorId.foreach { col =>
+        val key = s"${sp.organizationId}-$col-${sp.bucket}"
+        byOrgColBucket(key) = sp
+      }
+    }
+
+    cacheByOrgCollectorBucket.set(byOrgColBucket.toMap)
+    cacheByBucket.set(byBucket.toMap)
+    cacheByOrgIdInstanceNum.set(byOrgIdInst.toMap)
+    storageProfilesByOrgId.set(byOrgIdList.view.mapValues(_.toList).toMap)
+  }
+
+  /** Kick off a repeating poll at a fixed interval. */
+  def start(pollInterval: FiniteDuration = 1.minute): Unit = {
+    actorSystem.scheduler.scheduleWithFixedDelay(0.seconds, pollInterval) { () =>
+      val profiles = loadProfilesFromDb()
+      if (profiles.nonEmpty) {
+        refreshCaches(profiles)
+        logger.info(s"Loaded ${profiles.size} storage profiles from DB")
+      } else {
+        logger.warn("StorageProfile load returned 0 rows; keeping previous cache")
+      }
     }
   }
 }
