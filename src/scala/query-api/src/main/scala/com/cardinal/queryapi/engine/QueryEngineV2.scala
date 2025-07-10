@@ -577,9 +577,8 @@ class QueryEngineV2(
   }
 
   private def executionGroupSize(): Int = {
-    val numWorkers = Math.max(6, DiscoveryService.getNumPods())
-    numWorkers * config.getInt("query.worker.num.file.capacity.per.vCPU") * config
-      .getInt("query.worker.num.vCPU")
+    val numWorkers = Math.max(6, DiscoveryService.getNumPods)
+    numWorkers * config.getInt("query.worker.num.file.capacity.per.vCPU") * config.getInt("query.worker.num.vCPU")
   }
 
   def computeCardinality(

@@ -34,15 +34,16 @@ object SegmentCacheManager {
   private val timeOfLastScaleRequest = new AtomicLong(0)
   private val scaleUpWaitTime = config.getInt("scale-up.wait.time.minutes")
   private val scaleDownWaitTime = config.getInt("scale-down.wait.time.minutes")
-  // Initialize kubernetes java client..
   private val client = io.kubernetes.client.util.Config.defaultClient
   Configuration.setDefaultApiClient(client)
-  val queryWorkerDeploymentName = sys.env.getOrElse("QUERY_WORKER_DEPLOYMENT", "query-worker")
+  private val queryWorkerDeploymentName = sys.env.getOrElse("QUERY_WORKER_DEPLOYMENT_NAME",
+    throw new RuntimeException("QUERY_WORKER_DEPLOYMENT_NAME environment variable is not set!")
+  )
 
   def waitUntilScaled(queryId: String): Source[Heartbeat, NotUsed] = {
     Source
       .tick(0.seconds, 3.seconds, NotUsed)
-      .takeWhile(_ => DiscoveryService.getNumPods() < getMaxQueryWorkers)
+      .takeWhile(_ => DiscoveryService.getNumPods < getMaxQueryWorkers)
       .wireTap(_ => scaleIfPossible(queryId))
       .map { _ =>
         Heartbeat(`type` = "waiting_scale_up")
@@ -54,9 +55,9 @@ object SegmentCacheManager {
     if (isRunningInKubernetes && !isGlobalQueryStack) {
       DiscoveryService(queryWorkerDeploymentName).runForeach { clusterState =>
         val numQueryWorkers = clusterState.current.size
-        val slotId = DiscoveryService.toSlotId(s"query-api", InetAddress.getLocalHost.getHostName)
+        val slotId = DiscoveryService.toSlotId(InetAddress.getLocalHost.getHostName)
         if (slotId == 0) {
-          logger.info(s"Number of query workers = ${DiscoveryService.getNumPods()}")
+          logger.info(s"Number of query workers = ${DiscoveryService.getNumPods}")
           val minutesSinceLastQuery = minutesSince(timeOfLastQuery)
           val minPodAge = TimeUnit.MINUTES
             .convert(System.currentTimeMillis() - DiscoveryService.getYoungestWorkerStartTime, TimeUnit.MILLISECONDS)
@@ -97,7 +98,7 @@ object SegmentCacheManager {
 
   private def getScaleTo: Int = {
     val maxCapacity = getMaxQueryWorkers
-    val current = DiscoveryService.getNumPods()
+    val current = DiscoveryService.getNumPods
     val totalTime = totalQueryTimes.get().value.getOrElse(0.0)
     val metadataLookupTime = metadataLookupTimes.get().value.getOrElse(0.0)
     val queryWorkerTime = totalTime - metadataLookupTime
@@ -167,7 +168,7 @@ class SegmentCacheManager(actorSystem: ActorSystem) {
 
   private val _downloadQueue = StreamUtils
     .blockingQueue[Seq[SegmentInfo]](id = "downloadQueue", 1024)
-    .filter(_ => DiscoveryService.getNumPods() > 0)
+    .filter(_ => DiscoveryService.getNumPods > 0)
     .flatMapConcat(
       segments => Source(segments.groupBy(s => getTargetPod(s.segmentId)))
     )
@@ -212,7 +213,7 @@ class SegmentCacheManager(actorSystem: ActorSystem) {
     .run()
 
   def getGroupedByQueryWorkerPod(segmentRequests: List[SegmentRequest]): Map[Pod, List[SegmentRequest]] = {
-    if (DiscoveryService.getNumPods() == 0) Map.empty
+    if (DiscoveryService.getNumPods == 0) Map.empty
     else segmentRequests.groupBy(s => getTargetPod(s.segmentId))
   }
 

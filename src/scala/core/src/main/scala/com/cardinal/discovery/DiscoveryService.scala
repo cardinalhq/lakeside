@@ -27,7 +27,9 @@ object DiscoveryService {
   private val sourcesMap = new ConcurrentHashMap[String, Source[ClusterState, NotUsed]]()
   private val slotInfos = new ConcurrentHashMap[String, SlotInfo]()
   private val hashRings = new ConcurrentHashMap[String, HashRing]()
-  val queryWorkerDeploymentName = sys.env.getOrElse("QUERY_WORKER_DEPLOYMENT", "query-worker")
+  private val queryWorkerServiceName = sys.env.getOrElse("QUERY_WORKER_SERVICE_NAME",
+    throw new RuntimeException("QUERY_WORKER_SERVICE_NAME environment variable is not set!")
+  )
   private val heartBeatingQueryWorkers = new ConcurrentHashMap[String, Long]() // podIp -> heartbeat websocket source
 
   def getYoungestWorkerStartTime: Long = {
@@ -38,9 +40,9 @@ object DiscoveryService {
   }
 
   def getTargetPod(segmentId: String): Pod = {
-    val infoRef = slotInfos.get(queryWorkerDeploymentName)
+    val infoRef = slotInfos.get(queryWorkerServiceName)
     if (infoRef.numSlots == 0) {
-      logger.error(s"Could not find target pod for s$queryWorkerDeploymentName/$segmentId")
+      logger.error(s"Could not find target pod for s$queryWorkerServiceName/$segmentId")
       null
     } else {
       val slotId = Math.abs(segmentId.replace("tbl_", "").hashCode) % infoRef.numSlots
@@ -52,50 +54,47 @@ object DiscoveryService {
     }
   }
 
-  def getNumPods(serviceName: String = queryWorkerDeploymentName): Int = {
-    val slotInfo = slotInfos.get(serviceName)
+  def getNumPods: Int = {
+    val slotInfo = slotInfos.get(queryWorkerServiceName)
     if (slotInfo == null) 0
     else slotInfo.numSlots
   }
 
-  private def toAddresses(serviceName: String, resolved: ServiceDiscovery.Resolved): Set[Pod] = {
+  private def toAddresses(resolved: ServiceDiscovery.Resolved): Set[Pod] = {
     resolved.addresses
       .map(resolved => {
         if (!Commons.isRunningInKubernetes) {
           Pod(ip = resolved.host, slotId = 0, isLocal = true)
         } else {
           val ip = resolved.address.get.getHostAddress
-          val slotId = toSlotId(serviceName, resolved.address.get.getHostName)
+          val slotId = toSlotId(resolved.address.get.getHostName)
           val localHostName = InetAddress.getLocalHost.getCanonicalHostName
-          val localSlotId = toSlotId(serviceName, localHostName)
+          val localSlotId = toSlotId(localHostName)
           Pod(ip = ip, slotId = slotId, isLocal = slotId == localSlotId)
         }
       })
       .toSet
   }
 
-  def toSlotId(serviceName: String, hostName: String = InetAddress.getLocalHost.getHostName): Int = {
-    Try(hostName.split("\\.").head.replace(s"$serviceName-", "").toInt).getOrElse(-1)
+  def toSlotId(hostName: String = InetAddress.getLocalHost.getHostName): Int = {
+    Try(hostName.split("\\.").head.replace(s"$queryWorkerServiceName-", "").toInt).getOrElse(-1)
   }
 
-  private def lookup(
-    serviceDiscovery: ServiceDiscovery,
-    serviceName: String
-  ): Source[ServiceDiscovery.Resolved, NotUsed] = {
-    val eventualResolved = serviceDiscovery.lookup(lookup = Lookup(serviceName), 30.seconds)
+  private def lookup(serviceDiscovery: ServiceDiscovery): Source[ServiceDiscovery.Resolved, NotUsed] = {
+    val eventualResolved = serviceDiscovery.lookup(lookup = Lookup(queryWorkerServiceName), 30.seconds)
     Source.future(eventualResolved)
   }
 
-  private def getHashRing(serviceName: String): HashRing = {
-    hashRings.computeIfAbsent(serviceName, (_: String) => new HashRing)
+  private def getHashRing: HashRing = {
+    hashRings.computeIfAbsent(queryWorkerServiceName, (_: String) => new HashRing)
   }
 
   private def updateQueryWorkerSlotInfo(pod: Pod, shouldAdd: Boolean): Unit = {
     if (shouldAdd) {
-      slotInfos.computeIfAbsent(queryWorkerDeploymentName, _ => SlotInfo(0, Map.empty))
+      slotInfos.computeIfAbsent(queryWorkerServiceName, _ => SlotInfo(0, Map.empty))
     }
     slotInfos.computeIfPresent(
-      queryWorkerDeploymentName,
+      queryWorkerServiceName,
       (_, slotInfo) => {
         val newPods = if (shouldAdd) {
           slotInfo.podBySlot.values ++ List(pod)
@@ -112,15 +111,13 @@ object DiscoveryService {
       }
     )
     if (shouldAdd) {
-      logger.info(s"Successfully added ${pod.ip} to $queryWorkerDeploymentName slotInfos")
+      logger.info(s"Successfully added ${pod.ip} to $queryWorkerServiceName slotInfos")
     } else {
-      logger.info(s"Removed ${pod.ip} from $queryWorkerDeploymentName slotInfos")
+      logger.info(s"Removed ${pod.ip} from $queryWorkerServiceName slotInfos")
     }
   }
 
-  private def startHeartBeatingWithQueryWorker(
-    queryWorkerPod: Pod
-  )(implicit as: ActorSystem): Future[Done] = {
+  private def startHeartBeatingWithQueryWorker(queryWorkerPod: Pod)(implicit as: ActorSystem): Future[Done] = {
     implicit val es: ExecutionContextExecutor = as.getDispatcher
     // Only add the query-worker to slotInfos when it establishes the heartbeat websocket connection
     val ip = queryWorkerPod.ip
@@ -149,7 +146,7 @@ object DiscoveryService {
       .run()
   }
 
-  def apply(serviceName: String)(implicit as: ActorSystem): Source[ClusterState, NotUsed] = {
+  def apply(serviceName: String = queryWorkerServiceName)(implicit as: ActorSystem): Source[ClusterState, NotUsed] = {
     sourcesMap.computeIfAbsent(
       serviceName,
       (_: String) => {
@@ -167,8 +164,8 @@ object DiscoveryService {
               Source
                 .repeat(NotUsed)
                 .throttle(1, 30.seconds, 1, ThrottleMode.Shaping)
-                .flatMapConcat(_ => lookup(serviceDiscovery, serviceName))
-                .map(resolved => toAddresses(serviceName, resolved))
+                .flatMapConcat(_ => lookup(serviceDiscovery))
+                .map(resolved => toAddresses(resolved))
                 .statefulMapConcat {
                   () =>
                     var current = Set[Pod]()
@@ -199,7 +196,7 @@ object DiscoveryService {
           .alsoTo(Sink.foreach {
             clusterState =>
               {
-                if (serviceName.equals(queryWorkerDeploymentName)) {
+                if (serviceName.equals(queryWorkerServiceName)) {
                   clusterState.current.foreach(pod => {
                     heartBeatingQueryWorkers.computeIfAbsent(pod.ip, _ => {
                       startHeartBeatingWithQueryWorker(pod)
@@ -215,7 +212,7 @@ object DiscoveryService {
                     )
                   )
 
-                  val hashRing = getHashRing(serviceName)
+                  val hashRing = getHashRing
                   clusterState.added.foreach { addedPod =>
                     hashRing.add(addedPod)
                   }
