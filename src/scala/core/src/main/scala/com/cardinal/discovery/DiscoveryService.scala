@@ -39,7 +39,7 @@ object DiscoveryService {
 
   def getYoungestWorkerStartTime: Long = {
     if(heartBeatingQueryWorkers.isEmpty) return 0L
-    val minWorkerAge = heartBeatingQueryWorkers.values().asScala.max]
+    val minWorkerAge = heartBeatingQueryWorkers.values().asScala.max
     logger.info(s"Min worker age = $minWorkerAge")
     minWorkerAge
   }
