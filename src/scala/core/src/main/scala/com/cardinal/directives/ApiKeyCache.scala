@@ -43,7 +43,7 @@ object ApiKeyCache {
   }
 }
 
-class ApiKeyCache() {
+class ApiKeyCache {
   private val logger = LoggerFactory.getLogger(getClass)
 
   private val sql = "SELECT organization_id, api_key FROM c_organization_api_keys WHERE enabled = true;"
@@ -88,5 +88,4 @@ class ApiKeyCache() {
       if (connection != null) connection.close()
     }
   }
-
 }

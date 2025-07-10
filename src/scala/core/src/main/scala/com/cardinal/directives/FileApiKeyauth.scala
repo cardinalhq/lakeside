@@ -5,7 +5,6 @@ import akka.http.scaladsl.server.Directive1
 import akka.http.scaladsl.server.Directives._
 import com.cardinal.directives.ApiKeyAuth
 import com.cardinal.utils.Commons.API_KEY_HEADER
-import org.springframework.boot.autoconfigure.condition.{ConditionalOnExpression, ConditionalOnProperty}
 import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.Yaml
 
@@ -13,8 +12,6 @@ import java.io.FileInputStream
 import scala.jdk.CollectionConverters._
 
 @Component
-@ConditionalOnProperty(name = Array("auth.apikey.enabled"), havingValue = "true")
-@ConditionalOnExpression("#{systemEnvironment['APIKEY_FILE'] != null}")
 class FileApiKeyAuth extends ApiKeyAuth {
   override def checkApiKey: Directive1[String] =
     optionalHeaderValueByName(API_KEY_HEADER).flatMap {
@@ -44,8 +41,8 @@ case class ApiKeyFileEntry(
 object ApiKeyFileCache {
   // Path to YAML file (must be set)
   private val filePath: String = sys.env.getOrElse(
-    "APIKEY_FILE",
-    throw new IllegalStateException("Environment variable APIKEY_FILE must be set")
+    "API_KEYS_FILE",
+    throw new IllegalStateException("Environment variable API_KEYS_FILE must be set")
   )
 
   // Load and parse YAML once

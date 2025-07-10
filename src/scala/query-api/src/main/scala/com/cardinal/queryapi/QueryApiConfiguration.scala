@@ -1,7 +1,9 @@
 package com.cardinal.queryapi
 
 import akka.actor.ActorSystem
-import com.cardinal.config.StorageProfileCache
+import com.cardinal.auth.FileApiKeyAuth
+import com.cardinal.config.{StorageProfileCache, StorageProfileCacheControlPlane, StorageProfileCacheFile}
+import com.cardinal.directives.{ApiKeyAuth, DatabaseApiKeyAuth}
 import com.cardinal.queryapi.engine.{QueryEngineV2, SegmentCacheManager}
 import com.cardinal.utils.Commons.isRunningInKubernetes
 import com.typesafe.config.{Config, ConfigFactory}
@@ -54,5 +56,14 @@ class QueryApiConfiguration {
       segmentCacheManager = segmentCacheManager,
       storageProfileCache = storageProfileCache
     )
+  }
+
+  @Bean(value = Array("apiKeyAuth"))
+  def apiKeyAuthImpl: ApiKeyAuth = {
+    val fname = sys.env.get("API_KEYS_FILE")
+    if (fname.isDefined) {
+      return new FileApiKeyAuth
+    }
+    new DatabaseApiKeyAuth
   }
 }

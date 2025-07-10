@@ -37,11 +37,12 @@ object SegmentCacheManager {
   // Initialize kubernetes java client..
   private val client = io.kubernetes.client.util.Config.defaultClient
   Configuration.setDefaultApiClient(client)
+  val queryWorkerDeploymentName = sys.env.getOrElse("QUERY_WORKER_DEPLOYMENT", "query-worker")
 
   def waitUntilScaled(queryId: String): Source[Heartbeat, NotUsed] = {
     Source
       .tick(0.seconds, 3.seconds, NotUsed)
-      .takeWhile(_ => DiscoveryService.getNumPods(QUERY_WORKER) < getMaxQueryWorkers)
+      .takeWhile(_ => DiscoveryService.getNumPods() < getMaxQueryWorkers)
       .wireTap(_ => scaleIfPossible(queryId))
       .map { _ =>
         Heartbeat(`type` = "waiting_scale_up")
@@ -51,11 +52,11 @@ object SegmentCacheManager {
 
   def startDiscovery()(implicit as: ActorSystem): Unit = {
     if (isRunningInKubernetes && !isGlobalQueryStack) {
-      DiscoveryService(QUERY_WORKER).runForeach { clusterState =>
+      DiscoveryService(queryWorkerDeploymentName).runForeach { clusterState =>
         val numQueryWorkers = clusterState.current.size
         val slotId = DiscoveryService.toSlotId(s"query-api", InetAddress.getLocalHost.getHostName)
         if (slotId == 0) {
-          logger.info(s"Number of query workers = ${DiscoveryService.getNumPods(QUERY_WORKER)}")
+          logger.info(s"Number of query workers = ${DiscoveryService.getNumPods()}")
           val minutesSinceLastQuery = minutesSince(timeOfLastQuery)
           val minPodAge = TimeUnit.MINUTES
             .convert(System.currentTimeMillis() - DiscoveryService.getYoungestWorkerStartTime, TimeUnit.MILLISECONDS)
@@ -96,7 +97,7 @@ object SegmentCacheManager {
 
   private def getScaleTo: Int = {
     val maxCapacity = getMaxQueryWorkers
-    val current = DiscoveryService.getNumPods(QUERY_WORKER)
+    val current = DiscoveryService.getNumPods()
     val totalTime = totalQueryTimes.get().value.getOrElse(0.0)
     val metadataLookupTime = metadataLookupTimes.get().value.getOrElse(0.0)
     val queryWorkerTime = totalTime - metadataLookupTime
@@ -115,21 +116,20 @@ object SegmentCacheManager {
       val api = new AppsV1Api()
       // Define deployment details
       val namespace = sys.env.getOrElse("POD_NAMESPACE", "cardinalhq")
-      val deploymentName = QUERY_WORKER
 
       // Get the existing deployment
-      val deployment = api.readNamespacedDeployment(deploymentName, namespace, null)
+      val deployment = api.readNamespacedDeployment(queryWorkerDeploymentName, namespace, null)
 
       // Update the replica count
       val spec = deployment.getSpec
       if (spec != null) {
         spec.setReplicas(replicaCount)
         // Update the deployment with the new replica count
-        api.replaceNamespacedDeployment(deploymentName, namespace, deployment, null, null, null, null)
+        api.replaceNamespacedDeployment(queryWorkerDeploymentName, namespace, deployment, null, null, null, null)
         logger.info(s"[$queryId] Successfully requested worker scale to $replicaCount")
         timeOfLastScaleRequest.set(System.currentTimeMillis())
       } else {
-        logger.error(s"[$queryId] Could not find $QUERY_WORKER deployment!")
+        logger.error(s"[$queryId] Could not find $queryWorkerDeploymentName deployment!")
       }
     } catch {
       case e: ApiException =>
@@ -167,9 +167,9 @@ class SegmentCacheManager(actorSystem: ActorSystem) {
 
   private val _downloadQueue = StreamUtils
     .blockingQueue[Seq[SegmentInfo]](id = "downloadQueue", 1024)
-    .filter(_ => DiscoveryService.getNumPods(QUERY_WORKER) > 0)
+    .filter(_ => DiscoveryService.getNumPods() > 0)
     .flatMapConcat(
-      segments => Source(segments.groupBy(s => getTargetPod(QUERY_WORKER, s.segmentId)))
+      segments => Source(segments.groupBy(s => getTargetPod(s.segmentId)))
     )
     .wireTap(e => logger.info(s"Requesting ${e._1.ip} to download ${e._2.size} segments"))
     .mapAsync(PARALLELISM) { groupedByPod =>
@@ -212,8 +212,8 @@ class SegmentCacheManager(actorSystem: ActorSystem) {
     .run()
 
   def getGroupedByQueryWorkerPod(segmentRequests: List[SegmentRequest]): Map[Pod, List[SegmentRequest]] = {
-    if (DiscoveryService.getNumPods(QUERY_WORKER) == 0) Map.empty
-    else segmentRequests.groupBy(s => getTargetPod(QUERY_WORKER, s.segmentId))
+    if (DiscoveryService.getNumPods() == 0) Map.empty
+    else segmentRequests.groupBy(s => getTargetPod(s.segmentId))
   }
 
   def enqueueCacheRequest(segments: Seq[SegmentInfo]): Unit = {

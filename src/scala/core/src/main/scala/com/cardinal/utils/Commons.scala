@@ -72,7 +72,6 @@ object Commons {
 
   val STORAGE_PROFILE_CLOUD_PROVIDER_GOOGLE = "gcp"
 
-  val QUERY_WORKER = "query-worker"
   val QUERY_WORKER_CLUSTER = "QUERY_WORKER_CLUSTER"
   val QUERY_WORKER_PORT = 7101
   val QUERY_WORKER_HEARTBEAT = "/api/internal/heartbeat"

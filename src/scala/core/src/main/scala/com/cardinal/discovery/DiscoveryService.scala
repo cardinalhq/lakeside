@@ -14,7 +14,7 @@ import com.cardinal.utils.Commons._
 import com.cardinal.utils.transport.HashRing
 import org.slf4j.LoggerFactory
 import software.amazon.awssdk.services.ecs.EcsClient
-import software.amazon.awssdk.services.ecs.model.{DescribeTasksRequest, ListTasksRequest, UpdateServiceRequest}
+import software.amazon.awssdk.services.ecs.model.{DescribeTasksRequest, ListTasksRequest}
 
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
@@ -34,19 +34,20 @@ object DiscoveryService {
   private val ecsClient: Option[EcsClient] =
     if (sys.env.getOrElse(QUERY_WORKER_CLUSTER, "").nonEmpty) Some(EcsClient.builder().build()) else None
   private val clusterName = sys.env.getOrElse(QUERY_WORKER_CLUSTER, "")
+  val queryWorkerDeploymentName = sys.env.getOrElse("QUERY_WORKER_DEPLOYMENT", "query-worker")
   private val heartBeatingQueryWorkers = new ConcurrentHashMap[String, Long]() // podIp -> heartbeat websocket source
 
   def getYoungestWorkerStartTime: Long = {
     if(heartBeatingQueryWorkers.isEmpty) return 0L
-    val minWorkerAge = heartBeatingQueryWorkers.values().asScala.max
+    val minWorkerAge = heartBeatingQueryWorkers.values().asScala.max]
     logger.info(s"Min worker age = $minWorkerAge")
     minWorkerAge
   }
 
-  def getTargetPod(serviceName: String, segmentId: String): Pod = {
-    val infoRef = slotInfos.get(serviceName)
+  def getTargetPod(segmentId: String): Pod = {
+    val infoRef = slotInfos.get(queryWorkerDeploymentName)
     if (infoRef.numSlots == 0) {
-      logger.error(s"Could not find target pod for s$serviceName/$segmentId")
+      logger.error(s"Could not find target pod for s$queryWorkerDeploymentName/$segmentId")
       null
     } else {
       val slotId = Math.abs(segmentId.replace("tbl_", "").hashCode) % infoRef.numSlots
@@ -58,7 +59,7 @@ object DiscoveryService {
     }
   }
 
-  def getNumPods(serviceName: String): Int = {
+  def getNumPods(serviceName: String = queryWorkerDeploymentName): Int = {
     val slotInfo = slotInfos.get(serviceName)
     if (slotInfo == null) 0
     else slotInfo.numSlots
@@ -123,7 +124,7 @@ object DiscoveryService {
     serviceDiscovery: ServiceDiscovery,
     serviceName: String
   ): Source[ServiceDiscovery.Resolved, NotUsed] = {
-    if (serviceName.equals(QUERY_WORKER) && clusterName.nonEmpty) {
+    if (serviceName.equals(queryWorkerDeploymentName) && clusterName.nonEmpty) {
       Source.future(lookupEcs(clusterName, serviceName))
     } else {
       val eventualResolved = serviceDiscovery.lookup(lookup = Lookup(serviceName), 30.seconds)
@@ -137,10 +138,10 @@ object DiscoveryService {
 
   private def updateQueryWorkerSlotInfo(pod: Pod, shouldAdd: Boolean): Unit = {
     if (shouldAdd) {
-      slotInfos.computeIfAbsent(QUERY_WORKER, _ => SlotInfo(0, Map.empty))
+      slotInfos.computeIfAbsent(queryWorkerDeploymentName, _ => SlotInfo(0, Map.empty))
     }
     slotInfos.computeIfPresent(
-      QUERY_WORKER,
+      queryWorkerDeploymentName,
       (_, slotInfo) => {
         val newPods = if (shouldAdd) {
           slotInfo.podBySlot.values ++ List(pod)
@@ -157,9 +158,9 @@ object DiscoveryService {
       }
     )
     if (shouldAdd) {
-      logger.info(s"Successfully added ${pod.ip} to $QUERY_WORKER slotInfos")
+      logger.info(s"Successfully added ${pod.ip} to $queryWorkerDeploymentName slotInfos")
     } else {
-      logger.info(s"Removed ${pod.ip} from $QUERY_WORKER slotInfos")
+      logger.info(s"Removed ${pod.ip} from $queryWorkerDeploymentName slotInfos")
     }
   }
 
@@ -244,7 +245,7 @@ object DiscoveryService {
           .alsoTo(Sink.foreach {
             clusterState =>
               {
-                if (serviceName.equals(QUERY_WORKER)) {
+                if (serviceName.equals(queryWorkerDeploymentName)) {
                   clusterState.current.foreach(pod => {
                     heartBeatingQueryWorkers.computeIfAbsent(pod.ip, _ => {
                       startHeartBeatingWithQueryWorker(pod)
