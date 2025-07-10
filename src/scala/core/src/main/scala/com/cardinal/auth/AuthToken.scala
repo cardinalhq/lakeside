@@ -15,13 +15,13 @@ object AuthToken {
   private val issuer = "cardinalhq.io"
 
   // Load the HMAC256 key from the environment (throws if missing)
-  private val secretKey: String =
+  val secretKey: String =
     sys.env.getOrElse(
       "TOKEN_HMAC256_KEY",
       throw new IllegalStateException("Environment variable TOKEN_HMAC256_KEY must be set")
     )
 
-  private val algorithm: Algorithm = Algorithm.HMAC256(secretKey)
+  private val algorithm: Algorithm = Algorithm.HMAC256("" + secretKey)
 
   private val jwtVerifier: JWTVerifier =
     JWT
