@@ -13,8 +13,6 @@ import com.cardinal.utils.Commons
 import com.cardinal.utils.Commons._
 import com.cardinal.utils.transport.HashRing
 import org.slf4j.LoggerFactory
-import software.amazon.awssdk.services.ecs.EcsClient
-import software.amazon.awssdk.services.ecs.model.{DescribeTasksRequest, ListTasksRequest}
 
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
@@ -25,15 +23,10 @@ import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.util.Try
 
 object DiscoveryService {
-
   private final val logger = LoggerFactory.getLogger(getClass)
   private val sourcesMap = new ConcurrentHashMap[String, Source[ClusterState, NotUsed]]()
   private val slotInfos = new ConcurrentHashMap[String, SlotInfo]()
   private val hashRings = new ConcurrentHashMap[String, HashRing]()
-
-  private val ecsClient: Option[EcsClient] =
-    if (sys.env.getOrElse(QUERY_WORKER_CLUSTER, "").nonEmpty) Some(EcsClient.builder().build()) else None
-  private val clusterName = sys.env.getOrElse(QUERY_WORKER_CLUSTER, "")
   val queryWorkerDeploymentName = sys.env.getOrElse("QUERY_WORKER_DEPLOYMENT", "query-worker")
   private val heartBeatingQueryWorkers = new ConcurrentHashMap[String, Long]() // podIp -> heartbeat websocket source
 
@@ -85,51 +78,12 @@ object DiscoveryService {
     Try(hostName.split("\\.").head.replace(s"$serviceName-", "").toInt).getOrElse(-1)
   }
 
-  private def lookupEcs(
-    clusterName: String,
-    serviceName: String
-  ): Future[ServiceDiscovery.Resolved] = {
-    try {
-      val tasks =
-        ecsClient.get.listTasks(ListTasksRequest.builder().cluster(clusterName).serviceName(serviceName).build())
-
-      if(!tasks.taskArns().isEmpty) {
-        val taskDetails = ecsClient.get
-          .describeTasks(DescribeTasksRequest.builder().cluster(clusterName).tasks(tasks.taskArns()).build())
-          .tasks()
-
-        val resolvedTargets = taskDetails.asScala.toList
-          .filter(_.lastStatus().equals("RUNNING"))
-          .map(t => {
-            t.containers().get(0).networkInterfaces().get(0).privateIpv4Address()
-          })
-          .sorted
-          .map(taskIp => {
-            val taskInet4Address = InetAddress.getByName(taskIp)
-            ServiceDiscovery.ResolvedTarget(host = taskIp, port = None, address = Some(taskInet4Address))
-          })
-        Future.successful(ServiceDiscovery.Resolved(serviceName = serviceName, addresses = resolvedTargets))
-      }
-      else {
-        Future.successful(ServiceDiscovery.Resolved(serviceName = serviceName, addresses = Seq.empty))
-      }
-    } catch {
-      case e: Exception =>
-        logger.error("query-worker discovery failed with error", e)
-        throw e
-    }
-  }
-
   private def lookup(
     serviceDiscovery: ServiceDiscovery,
     serviceName: String
   ): Source[ServiceDiscovery.Resolved, NotUsed] = {
-    if (serviceName.equals(queryWorkerDeploymentName) && clusterName.nonEmpty) {
-      Source.future(lookupEcs(clusterName, serviceName))
-    } else {
-      val eventualResolved = serviceDiscovery.lookup(lookup = Lookup(serviceName), 30.seconds)
-      Source.future(eventualResolved)
-    }
+    val eventualResolved = serviceDiscovery.lookup(lookup = Lookup(serviceName), 30.seconds)
+    Source.future(eventualResolved)
   }
 
   private def getHashRing(serviceName: String): HashRing = {

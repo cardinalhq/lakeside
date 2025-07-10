@@ -1,7 +1,6 @@
 package com.cardinal.core
 
 import com.cardinal.core.Environment.CloudRegion.{CloudRegion, LOCAL}
-import org.slf4j.LoggerFactory
 
 import java.net.{HttpURLConnection, URL}
 import scala.io.Source
@@ -9,9 +8,9 @@ import scala.util.{Failure, Success, Try, Using}
 
 object Environment {
 
-  private final val CLOUD_PROVIDER_AWS = "aws"
-  private final val CLOUD_PROVIDER_GCP = "gcp"
-  private final val CLOUD_PROVIDER_LOCAL = "local"
+  final val CLOUD_PROVIDER_AWS = "aws"
+  final val CLOUD_PROVIDER_GCP = "gcp"
+  final val CLOUD_PROVIDER_LOCAL = "local"
   private final val metadataBaseUrl = "http://169.254.169.254/latest"
 
   private val currentRegion: CloudRegion = determineCloudRegion()
@@ -21,18 +20,75 @@ object Environment {
     type CloudRegion = Value
 
     protected case class CloudRegionVal(provider: String, region: String) extends super.Val {
-      private def getProvider: String = provider
+      def getProvider: String = provider
       def isAws: Boolean = getProvider == CLOUD_PROVIDER_AWS
       def isGcp: Boolean = getProvider == CLOUD_PROVIDER_GCP
       def isLocal: Boolean = getProvider == CLOUD_PROVIDER_LOCAL
     }
     implicit def valueToCloudRegionVal(x: Value): CloudRegionVal = x.asInstanceOf[CloudRegionVal]
 
+    // AWS Regions
+    val AWS_US_EAST_1: CloudRegionVal = CloudRegionVal("aws", "us-east-1")
+    val AWS_US_EAST_2: CloudRegionVal = CloudRegionVal("aws", "us-east-2")
+    val AWS_US_WEST_1: CloudRegionVal = CloudRegionVal("aws", "us-west-1")
+    val AWS_US_WEST_2: CloudRegionVal = CloudRegionVal("aws", "us-west-2")
+    val AWS_CA_CENTRAL_1: CloudRegionVal = CloudRegionVal("aws", "ca-central-1")
+    val AWS_EU_WEST_1: CloudRegionVal = CloudRegionVal("aws", "eu-west-1")
+    val AWS_EU_WEST_2: CloudRegionVal = CloudRegionVal("aws", "eu-west-2")
+    val AWS_EU_WEST_3: CloudRegionVal = CloudRegionVal("aws", "eu-west-3")
+    val AWS_EU_CENTRAL_1: CloudRegionVal = CloudRegionVal("aws", "eu-central-1")
+    val AWS_EU_NORTH_1: CloudRegionVal = CloudRegionVal("aws", "eu-north-1")
+    val AWS_EU_SOUTH_1: CloudRegionVal = CloudRegionVal("aws", "eu-south-1")
+    val AWS_AP_SOUTHEAST_1: CloudRegionVal = CloudRegionVal("aws", "ap-southeast-1")
+    val AWS_AP_SOUTHEAST_2: CloudRegionVal = CloudRegionVal("aws", "ap-southeast-2")
+    val AWS_AP_SOUTHEAST_3: CloudRegionVal = CloudRegionVal("aws", "ap-southeast-3")
+    val AWS_AP_NORTHEAST_1: CloudRegionVal = CloudRegionVal("aws", "ap-northeast-1")
+    val AWS_AP_NORTHEAST_2: CloudRegionVal = CloudRegionVal("aws", "ap-northeast-2")
+    val AWS_AP_NORTHEAST_3: CloudRegionVal = CloudRegionVal("aws", "ap-northeast-3")
+    val AWS_AP_EAST_1: CloudRegionVal = CloudRegionVal("aws", "ap-east-1")
+    val AWS_AP_SOUTH_1: CloudRegionVal = CloudRegionVal("aws", "ap-south-1")
+    val AWS_SA_EAST_1: CloudRegionVal = CloudRegionVal("aws", "sa-east-1")
+    val AWS_AF_SOUTH_1: CloudRegionVal = CloudRegionVal("aws", "af-south-1")
+    val AWS_ME_SOUTH_1: CloudRegionVal = CloudRegionVal("aws", "me-south-1")
+    val AWS_ME_CENTRAL_1: CloudRegionVal = CloudRegionVal("aws", "me-central-1")
+
+    // GCP Regions
+    val GCP_US_CENTRAL1: CloudRegionVal = CloudRegionVal("gcp", "us-central1")
+    val GCP_US_EAST1: CloudRegionVal = CloudRegionVal("gcp", "us-east1")
+    val GCP_US_EAST4: CloudRegionVal = CloudRegionVal("gcp", "us-east4")
+    val GCP_US_WEST1: CloudRegionVal = CloudRegionVal("gcp", "us-west1")
+    val GCP_US_WEST2: CloudRegionVal = CloudRegionVal("gcp", "us-west2")
+    val GCP_US_WEST3: CloudRegionVal = CloudRegionVal("gcp", "us-west3")
+    val GCP_US_WEST4: CloudRegionVal = CloudRegionVal("gcp", "us-west4")
+    val GCP_ASIA_EAST1: CloudRegionVal = CloudRegionVal("gcp", "asia-east1")
+    val GCP_ASIA_EAST2: CloudRegionVal = CloudRegionVal("gcp", "asia-east2")
+    val GCP_ASIA_NORTHEAST1: CloudRegionVal = CloudRegionVal("gcp", "asia-northeast1")
+    val GCP_ASIA_NORTHEAST2: CloudRegionVal = CloudRegionVal("gcp", "asia-northeast2")
+    val GCP_ASIA_NORTHEAST3: CloudRegionVal = CloudRegionVal("gcp", "asia-northeast3")
+    val GCP_ASIA_SOUTH1: CloudRegionVal = CloudRegionVal("gcp", "asia-south1")
+    val GCP_ASIA_SOUTH2: CloudRegionVal = CloudRegionVal("gcp", "asia-south2")
+    val GCP_ASIA_SOUTHEAST1: CloudRegionVal = CloudRegionVal("gcp", "asia-southeast1")
+    val GCP_ASIA_SOUTHEAST2: CloudRegionVal = CloudRegionVal("gcp", "asia-southeast2")
+    val GCP_AUSTRALIA_SOUTHEAST1: CloudRegionVal = CloudRegionVal("gcp", "australia-southeast1")
+    val GCP_AUSTRALIA_SOUTHEAST2: CloudRegionVal = CloudRegionVal("gcp", "australia-southeast2")
+    val GCP_EUROPE_CENTRAL2: CloudRegionVal = CloudRegionVal("gcp", "europe-central2")
+    val GCP_EUROPE_NORTH1: CloudRegionVal = CloudRegionVal("gcp", "europe-north1")
+    val GCP_EUROPE_WEST1: CloudRegionVal = CloudRegionVal("gcp", "europe-west1")
+    val GCP_EUROPE_WEST2: CloudRegionVal = CloudRegionVal("gcp", "europe-west2")
+    val GCP_EUROPE_WEST3: CloudRegionVal = CloudRegionVal("gcp", "europe-west3")
+    val GCP_EUROPE_WEST4: CloudRegionVal = CloudRegionVal("gcp", "europe-west4")
+    val GCP_EUROPE_WEST6: CloudRegionVal = CloudRegionVal("gcp", "europe-west6")
+    val GCP_NORTHAMERICA_NORTHEAST1: CloudRegionVal = CloudRegionVal("gcp", "northamerica-northeast1")
+    val GCP_NORTHAMERICA_NORTHEAST2: CloudRegionVal = CloudRegionVal("gcp", "northamerica-northeast2")
+    val GCP_SOUTHAMERICA_EAST1: CloudRegionVal = CloudRegionVal("gcp", "southamerica-east1")
+    val GCP_SOUTHAMERICA_WEST1: CloudRegionVal = CloudRegionVal("gcp", "southamerica-west1")
+
+
     // Local
     val LOCAL: CloudRegionVal = CloudRegionVal("local", "local")
 
     // unknown
-    private val UNKNOWN: CloudRegionVal = CloudRegionVal("unknown", "unknown")
+    val UNKNOWN: CloudRegionVal = CloudRegionVal("unknown", "unknown")
 
     // Method to parse region string and return appropriate CloudRegionVal using reflection
     def fromRegionString(region: String): CloudRegionVal = {
@@ -56,7 +112,7 @@ object Environment {
     }
   }
 
-  private def isInKubernetes: Boolean = sys.env.getOrElse("KUBERNETES_SERVICE_HOST", "").nonEmpty
+  def isInKubernetes: Boolean = sys.env.getOrElse("KUBERNETES_SERVICE_HOST", "").nonEmpty
   def getCurrentRegion: CloudRegion = currentRegion
 
   private def fetchUrlWithTimeout(url: String, headers: Map[String, String], connectTimeout: Int = 1000, readTimeout: Int = 1000): Option[String] = {
@@ -188,5 +244,5 @@ object Environment {
 }
 
 class Environment{
-  def getCurrentRegion: CloudRegion = Environment.currentRegion
+  def getCurrentRegion = Environment.currentRegion
 }
