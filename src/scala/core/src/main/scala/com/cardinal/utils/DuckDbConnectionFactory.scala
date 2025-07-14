@@ -90,8 +90,8 @@ object DuckDbConnectionFactory {
   }
 
   //TODO: temporarily used for GCS, and used as fallback if no role specified
-  private val S3_ACCESS_KEY_ID = EnvUtils.firstEnv(Seq("AWS_ACCESS_KEY_ID", "S3_ACCESS_KEY_ID"))
-  private val SECRET_ACCESS_KEY = EnvUtils.firstEnv(Seq("AWS_SECRET_ACCESS_KEY", "S3_SECRET_ACCESS_KEY"))
+  private val S3_ACCESS_KEY_ID = EnvUtils.firstEnv(Seq("S3_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"))
+  private val SECRET_ACCESS_KEY = EnvUtils.firstEnv(Seq("S3_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"))
 
   private def withS3Credentials(statement: Statement, bucketNames: Set[String]): Statement = {
     logger.debug(s"Building s3 credentials for buckets: $bucketNames ")
