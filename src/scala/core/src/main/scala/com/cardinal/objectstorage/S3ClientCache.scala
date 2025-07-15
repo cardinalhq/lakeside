@@ -1,11 +1,11 @@
 package com.cardinal.objectstorage
 
 import com.amazonaws.ClientConfiguration
-import com.amazonaws.auth.AWSStaticCredentialsProvider
+import com.amazonaws.auth.STSAssumeRoleSessionCredentialsProvider
 import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration
 import com.amazonaws.retry.PredefinedRetryPolicies
 import com.amazonaws.services.s3.{AmazonS3, AmazonS3ClientBuilder}
-import com.cardinal.auth.AwsCredentialsCache
+import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder
 import com.cardinal.config.StorageProfileCache
 import org.slf4j.LoggerFactory
 import org.springframework.cache.annotation.{CacheConfig, Cacheable}
@@ -15,12 +15,11 @@ import org.springframework.stereotype.Component
 @Profile(Array("local","aws"))
 @Component
 @CacheConfig(cacheNames = Array("clients"),cacheManager = "clientCacheManager")
-class S3ClientCache(awsCredentialsCache: AwsCredentialsCache, storageProfileCache: StorageProfileCache) {
+class S3ClientCache(storageProfileCache: StorageProfileCache) {
   private val logger = LoggerFactory.getLogger(getClass)
 
   @Cacheable(value=Array("clients"), key = "#bucket" , sync = true)
   def getClient(bucket: String): AmazonS3 = {
-
     try {
       val optionStorageProfile = storageProfileCache.getStorageProfile(bucket)
       optionStorageProfile match {
@@ -42,40 +41,44 @@ class S3ClientCache(awsCredentialsCache: AwsCredentialsCache, storageProfileCach
         logger.error(s"Error creating S3 client for bucket $bucket", e)
         throw e
     }
-
   }
 
-
-  private def createS3Client(
-                              region: String,
-                              roleArn: String,
-                              externalId: String,
-                              endpoint : Option[String],
-                            ): AmazonS3 = {
+  private def createS3Client(region: String, roleArn: String, externalId: String, endpoint: Option[String]): AmazonS3 = {
     try {
       val clientConfig = new ClientConfiguration()
-        .withMaxConnections(200)                     // Bump up if you're highly concurrent
-        .withConnectionTimeout(10_000)               // 10 sec
+        .withMaxConnections(200)
+        .withConnectionTimeout(10_000)
         .withSocketTimeout(10_000)
-        .withMaxErrorRetry(5)                        // Retrying transient errors
+        .withMaxErrorRetry(5)
         .withRetryPolicy(PredefinedRetryPolicies.getDefaultRetryPolicyWithCustomMaxRetries(5))
+
+      val sts = AWSSecurityTokenServiceClientBuilder
+        .standard()
+        .withRegion(region)
+        .build()
+
+      val sessionName = s"cardinal-role-session-${java.util.UUID.randomUUID()}"
+      val stsProvider = new STSAssumeRoleSessionCredentialsProvider
+      .Builder(roleArn, sessionName)
+        .withStsClient(sts)
+        .withExternalId(externalId)
+        .build()
 
       AmazonS3ClientBuilder
         .standard()
         .withClientConfiguration(clientConfig)
-        .withCredentials(new AWSStaticCredentialsProvider(awsCredentialsCache.getCredentials(roleArn, externalId)))
+        .withCredentials(stsProvider)
         .withPathStyleAccessEnabled(true)
-        .withEndpointConfiguration(
-            endpoint match {
-                case Some(ep) => new EndpointConfiguration(ep, region)
-                case None => new EndpointConfiguration(s"s3.$region.amazonaws.com", region)
-            }
-        )
+        .withEndpointConfiguration {
+          endpoint match {
+            case Some(ep) => new EndpointConfiguration(ep, region)
+            case None     => new EndpointConfiguration(s"s3.$region.amazonaws.com", region)
+          }
+        }
         .build()
     } catch {
       case e: Exception =>
-        logger.error(s"Error creating S3 client with region $region and role $roleArn", e)
+        logger.error(s"Error creating S3 client for role=$roleArn region=$region", e)
         throw e
     }
-  }
-}
+  }}
