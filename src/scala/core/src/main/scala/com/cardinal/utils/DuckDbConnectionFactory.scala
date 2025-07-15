@@ -166,7 +166,7 @@ object DuckDbConnectionFactory {
 
         val allLines = baseLines ++ sessionLine ++ tailLines
         s"""
-           |CREATE SECRET secret_$secretSuffix (
+           |CREATE OR REPLACE SECRET secret_$secretSuffix (
            |  ${allLines.mkString(",\n  ")}
            |);
         """.stripMargin.trim
