@@ -60,15 +60,21 @@ object DuckDbConnectionFactory {
     connectionOpt match {
       case Some(expiringConnection) if expiringConnection.expirationTime.isAfter(now) =>
         logger.debug("Reusing existing sealed read connection.")
-        expiringConnection.connection
+        val conn = expiringConnection.connection
+        val statement = conn.createStatement()
+        withS3Credentials(statement, bucketNames)
+        statement.close()
+        conn
       case _ =>
         connectionOpt.foreach(_.connection.close()) // Close the connection if it is expired, so that we don't leak them
         logger.info("Initializing new sealed read connection with provided bucket names.")
         val connection = createConnection("jdbc:duckdb:")
         val statement = connection.createStatement()
+        statement.executeUpdate("INSTALL '/app/libs/httpfs.duckdb_extension'")
+        statement.executeUpdate("LOAD httpfs")
         withS3Credentials(statement, bucketNames)
         statement.close()
-        val newExpirationTime = now.plusSeconds(CREDENTIALS_VALIDITY_SECONDS - 60) // To prevent race conditions that could happen because we ask for credentials that are only valid for 1 hour
+        val newExpirationTime = now.plusSeconds(4 * 60) // tokens should renew about 5 minutes before they expire, but this should be done differently
         val connectionWithExpiration = ExpiringConnection(connection, newExpirationTime)
         sealedReadConnections.get().update(bucketNames, connectionWithExpiration)
         connection
@@ -95,9 +101,6 @@ object DuckDbConnectionFactory {
 
   private def withS3Credentials(statement: Statement, bucketNames: Set[String]): Statement = {
     logger.debug(s"Building s3 credentials for buckets: $bucketNames ")
-    statement.executeUpdate("INSTALL '/app/libs/httpfs.duckdb_extension'")
-    statement.executeUpdate("LOAD httpfs")
-
     val storageProfiles = bucketNames.flatMap { bucketName =>
       storageProfileCache.getStorageProfile(bucketName) match {
         case Some(profile) =>
@@ -121,7 +124,7 @@ object DuckDbConnectionFactory {
 
       val sql = if (isGcp) {
         s"""
-           |CREATE SECRET secret_$secretSuffix (
+           |CREATE OR REPLACE SECRET secret_$secretSuffix (
            |  TYPE GCS,
            |  ENDPOINT 'storage.googleapis.com',
            |  URL_STYLE 'path',
