@@ -1,10 +1,10 @@
 package com.cardinal.auth
 
-import akka.http.scaladsl.model.{HttpResponse, StatusCodes}
+import akka.http.scaladsl.model.{HttpHeader, HttpResponse, StatusCodes}
 import akka.http.scaladsl.server.Directive1
 import akka.http.scaladsl.server.Directives._
 import com.cardinal.directives.ApiKeyAuth
-import com.cardinal.utils.Commons.API_KEY_HEADER
+import com.cardinal.utils.Commons.API_KEY_HEADERS
 import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.Yaml
 
@@ -13,8 +13,10 @@ import scala.jdk.CollectionConverters._
 
 @Component
 class FileApiKeyAuth extends ApiKeyAuth {
-  override def checkApiKey: Directive1[String] =
-    optionalHeaderValueByName(API_KEY_HEADER).flatMap {
+  override def checkApiKey: Directive1[String] = {
+    optionalHeaderValuePF {
+      case h: HttpHeader if (API_KEY_HEADERS.exists(_.equalsIgnoreCase(h.name()))) => h.value()
+    }.flatMap {
       case Some(apiKey) =>
         ApiKeyFileCache.findCustomerId(apiKey) match {
           case Some(customerId) => provide(customerId)
@@ -24,6 +26,7 @@ class FileApiKeyAuth extends ApiKeyAuth {
       case None =>
         complete(HttpResponse(StatusCodes.Unauthorized, entity = "Missing or invalid API key"))
     }
+  }
 }
 
 /**
