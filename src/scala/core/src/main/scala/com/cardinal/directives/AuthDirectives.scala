@@ -3,7 +3,7 @@ package com.cardinal.directives
 import akka.actor.ActorSystem
 import akka.http.scaladsl.model.{HttpResponse, StatusCodes}
 import akka.http.scaladsl.server.{Directive1, Directives}
-import com.cardinal.auth.AuthToken
+import com.cardinal.auth.{AuthToken, FileApiKeyAuth}
 import com.cardinal.utils.Commons._
 import com.netflix.atlas.akka.WebApi
 import org.springframework.stereotype.Component
@@ -11,8 +11,11 @@ import org.springframework.stereotype.Component
 import scala.concurrent.{ExecutionContext, Future}
 
 @Component
-abstract class AuthDirectives(actorSystem: ActorSystem, apiKeyAuth: ApiKeyAuth) extends WebApi with Directives {
-  require(apiKeyAuth != null, "apiKeyAuth must not be null")
+abstract class AuthDirectives(actorSystem: ActorSystem) extends WebApi with Directives {
+  private val apiKeyAuth: ApiKeyAuth =
+    sys.env.get("API_KEYS_FILE")
+      .map(_ => new FileApiKeyAuth())
+      .getOrElse(new DatabaseApiKeyAuth())
 
   implicit val as: ActorSystem      = actorSystem
   implicit val ec: ExecutionContext = actorSystem.dispatcher
