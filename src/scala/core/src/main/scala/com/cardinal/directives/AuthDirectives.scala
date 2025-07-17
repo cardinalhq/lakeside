@@ -10,13 +10,9 @@ import org.springframework.stereotype.Component
 
 import scala.concurrent.{ExecutionContext, Future}
 
-/**
- * Now takes an ApiKeyAuth which Spring will inject
- * (either DatabaseApiKeyAuth or NoOpApiKeyAuth).
- */
 @Component
-abstract class AuthDirectives(actorSystem: ActorSystem, apiKeyAuth: ApiKeyAuth)
-  extends WebApi with Directives {
+abstract class AuthDirectives(actorSystem: ActorSystem, apiKeyAuth: ApiKeyAuth) extends WebApi with Directives {
+  require(apiKeyAuth != null, "apiKeyAuth must not be null")
 
   implicit val as: ActorSystem      = actorSystem
   implicit val ec: ExecutionContext = actorSystem.dispatcher
