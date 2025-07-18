@@ -1,7 +1,7 @@
 package com.cardinal.objectstorage
 
 import com.amazonaws.ClientConfiguration
-import com.amazonaws.auth.STSAssumeRoleSessionCredentialsProvider
+import com.amazonaws.auth.{AWSCredentialsProvider, DefaultAWSCredentialsProviderChain, STSAssumeRoleSessionCredentialsProvider}
 import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration
 import com.amazonaws.retry.PredefinedRetryPolicies
 import com.amazonaws.services.s3.{AmazonS3, AmazonS3ClientBuilder}
@@ -12,13 +12,15 @@ import org.springframework.cache.annotation.{CacheConfig, Cacheable}
 import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 
+import java.util.UUID
+
 @Profile(Array("local","aws"))
 @Component
 @CacheConfig(cacheNames = Array("clients"),cacheManager = "clientCacheManager")
 class S3ClientCache(storageProfileCache: StorageProfileCache) {
   private val logger = LoggerFactory.getLogger(getClass)
 
-  @Cacheable(value=Array("clients"), key = "#bucket" , sync = true)
+  @Cacheable(value = Array("clients"), key = "#bucket", sync = true)
   def getClient(bucket: String): AmazonS3 = {
     try {
       val optionStorageProfile = storageProfileCache.getStorageProfile(bucket)
@@ -43,42 +45,50 @@ class S3ClientCache(storageProfileCache: StorageProfileCache) {
     }
   }
 
-  private def createS3Client(region: String, roleArn: String, externalId: String, endpoint: Option[String]): AmazonS3 = {
-    try {
-      val clientConfig = new ClientConfiguration()
-        .withMaxConnections(200)
-        .withConnectionTimeout(10_000)
-        .withSocketTimeout(10_000)
-        .withMaxErrorRetry(5)
-        .withRetryPolicy(PredefinedRetryPolicies.getDefaultRetryPolicyWithCustomMaxRetries(5))
+  private def createS3Client(
+                              region: String,
+                              roleArn: String,
+                              externalId: String,
+                              endpoint: Option[String]
+                            ): AmazonS3 = {
+    val clientConfig = new ClientConfiguration()
+      .withMaxConnections(200)
+      .withConnectionTimeout(10_000)
+      .withSocketTimeout(10_000)
+      .withMaxErrorRetry(5)
+      .withRetryPolicy(
+        PredefinedRetryPolicies.getDefaultRetryPolicyWithCustomMaxRetries(5)
+      )
 
-      val sts = AWSSecurityTokenServiceClientBuilder
-        .standard()
-        .withRegion(region)
-        .build()
+    val credsProvider: AWSCredentialsProvider =
+      if (roleArn.trim.nonEmpty) {
+        val sts = AWSSecurityTokenServiceClientBuilder
+          .standard()
+          .withRegion(region)
+          .build()
 
-      val sessionName = s"cardinal-role-session-${java.util.UUID.randomUUID()}"
-      val stsProvider = new STSAssumeRoleSessionCredentialsProvider
-      .Builder(roleArn, sessionName)
-        .withStsClient(sts)
-        .withExternalId(externalId)
-        .build()
+        val sessionName = s"cardinal-role-session-${UUID.randomUUID()}"
+        new STSAssumeRoleSessionCredentialsProvider.Builder(roleArn, sessionName)
+          .withStsClient(sts)
+          .withExternalId(externalId)
+          .build()
+      } else {
+        DefaultAWSCredentialsProviderChain.getInstance()
+      }
 
-      AmazonS3ClientBuilder
-        .standard()
-        .withClientConfiguration(clientConfig)
-        .withCredentials(stsProvider)
-        .withPathStyleAccessEnabled(true)
-        .withEndpointConfiguration {
-          endpoint match {
-            case Some(ep) => new EndpointConfiguration(ep, region)
-            case None     => new EndpointConfiguration(s"s3.$region.amazonaws.com", region)
-          }
-        }
-        .build()
-    } catch {
-      case e: Exception =>
-        logger.error(s"Error creating S3 client for role=$roleArn region=$region", e)
-        throw e
-    }
-  }}
+    val endpointConfig =
+      endpoint
+        .map(ep => new EndpointConfiguration(ep, region))
+        .getOrElse(
+          new EndpointConfiguration(s"s3.$region.amazonaws.com", region)
+        )
+
+    AmazonS3ClientBuilder
+      .standard()
+      .withClientConfiguration(clientConfig)
+      .withCredentials(credsProvider)
+      .withPathStyleAccessEnabled(true)
+      .withEndpointConfiguration(endpointConfig)
+      .build()
+  }
+}
