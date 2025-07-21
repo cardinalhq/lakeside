@@ -26,6 +26,8 @@ object DuckDbConnectionFactory {
   private[utils] val sealedReadConnections: ThreadLocal[mutable.Map[Set[String], ExpiringConnection]] =
     ThreadLocal.withInitial(() => mutable.Map.empty)
 
+  private val DUCKDB_MEMORY_LIMIT = sys.env.getOrElse("DUCKDB_MEMORY_LIMIT", "4GB")
+
   installHttpfs()
 
   private def installHttpfs(): Unit = {
@@ -34,7 +36,7 @@ object DuckDbConnectionFactory {
         // open the connection once
         val conn = use(
           DriverManager
-            .getConnection("jdbc:duckdb:")
+            .getConnection("jdbc:duckdb:/db/shared.duckdb")
             .asInstanceOf[DuckDBConnection]
         )
 
@@ -72,6 +74,9 @@ object DuckDbConnectionFactory {
         val statement = connection.createStatement()
         statement.executeUpdate("INSTALL '/app/libs/httpfs.duckdb_extension'")
         statement.executeUpdate("LOAD httpfs")
+        statement.executeUpdate(s"SET memory_limit='${DUCKDB_MEMORY_LIMIT}'")
+        statement.executeUpdate("SET temp_directory = '/db/duckdb_swap'")
+        statement.executeUpdate("SET max_temp_directory_size = '5GB'")
         withS3Credentials(statement, bucketNames)
         statement.close()
         val newExpirationTime = now.plusSeconds(4 * 60) // tokens should renew about 5 minutes before they expire, but this should be done differently

@@ -190,7 +190,6 @@ object Commons {
         if (localParquet) DuckDbConnectionFactory.getLocalParquetConnection
         else DuckDbConnectionFactory.getSealedReadConnection(bucketNames = getBucketNames(segmentRequests))
       val statement = readConnection.createStatement()
-      statement.executeUpdate("SET memory_limit='13GB'")
 
       val paths = segmentRequests
         .map(sr => s"'${toParquetFilePath(localParquet = localParquet, sr)}'")
