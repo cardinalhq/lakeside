@@ -11,14 +11,14 @@ FROM eclipse-temurin:17-jdk-jammy AS build_arm64
 ARG TARGETOS
 ARG TARGETARCH
 
-RUN mkdir -p /app/libs && curl -fsSL "https://extensions.duckdb.org/v1.2.0/${TARGETOS}_${TARGETARCH}/httpfs.duckdb_extension.gz" \
+RUN mkdir -p /app/libs && curl -fsSL "https://extensions.duckdb.org/v1.3.2/${TARGETOS}_${TARGETARCH}/httpfs.duckdb_extension.gz" \
     | gunzip -c > /app/libs/httpfs.duckdb_extension
 
 FROM eclipse-temurin:17-jdk-jammy AS build_amd64
 ARG TARGETOS
 ARG TARGETARCH
 
-RUN mkdir -p /app/libs && curl -fsSL "https://extensions.duckdb.org/v1.2.0/${TARGETOS}_${TARGETARCH}_gcc4/httpfs.duckdb_extension.gz" \
+RUN mkdir -p /app/libs && curl -fsSL "https://extensions.duckdb.org/v1.3.2/${TARGETOS}_${TARGETARCH}/httpfs.duckdb_extension.gz" \
     | gunzip -c > /app/libs/httpfs.duckdb_extension
 
 FROM build_${TARGETARCH}

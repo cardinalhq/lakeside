@@ -10,7 +10,7 @@ EXPOSE 7101
 COPY libs/linux-amd64/lib-trigram.h /app/libs/lib-trigram.h
 COPY libs/linux-amd64/lib-trigram.so /app/libs/lib-trigram.so
 
-RUN curl -fsSL "https://extensions.duckdb.org/v1.2.0/linux_amd64_gcc4/httpfs.duckdb_extension.gz" \
+RUN curl -fsSL "https://extensions.duckdb.org/v1.3.2/linux_amd64/httpfs.duckdb_extension.gz" \
     | gunzip -c > /app/libs/httpfs.duckdb_extension
 
 RUN chmod -R a+rx /app

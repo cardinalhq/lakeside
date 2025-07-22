@@ -5,7 +5,7 @@ ext {
     atlasVersion = '1.7.0-rc.27'
     caffeineVersion = '3.1.8'
     ddSketchVersion = '0.8.2'
-    duckDbVersion = '1.2.0'
+    duckDbVersion = '1.3.2.0'
     dynamoDbVersion = '1.12.332'
     jodaVersion = '2.12.2'
     otelVersion = "1.33.0"
