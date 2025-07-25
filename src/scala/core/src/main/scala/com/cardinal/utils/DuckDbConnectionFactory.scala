@@ -18,8 +18,7 @@ case class ExpiringConnection(connection: DuckDBConnection, expirationTime: Inst
 
 object DuckDbConnectionFactory {
   private val logger = LoggerFactory.getLogger(getClass)
-  private[utils] var credentialsCache =
-    if (Environment.getCurrentRegion.isAws) SpringContextUtil.getBean(classOf[AwsCredentialsCache]) else null
+  private[utils] lazy val credentialsCache: AwsCredentialsCache = SpringContextUtil.getBean(classOf[AwsCredentialsCache])
 
   private[utils] var storageProfileCache =  SpringContextUtil.getBean(classOf[StorageProfileCache])
 

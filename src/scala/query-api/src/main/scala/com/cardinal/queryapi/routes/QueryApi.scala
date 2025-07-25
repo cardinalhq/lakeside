@@ -172,8 +172,8 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
           entity(as[String]) { qBody: String =>
             {
               logger.info(s"Received request: $qBody")
-              parameters("s".?, "e".?) {
-                case (s, e) =>
+              parameters("s".?, "e".?, "timeseriesOnly".as[Boolean].?) {
+                case (s, e, timeseriesOnly) =>
                   if (Commons.isGlobalQueryStack) {
                     makeRegionalCall(
                       customerId = customerId,
@@ -215,7 +215,9 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
                         )
 
                       val logBaseExpressions = astInput.baseExpressions.filter(_._2.isEventTelemetryType)
-                      val logExemplarResponseSource =
+                      val logExemplarResponseSource = if(timeseriesOnly.getOrElse(false)) {
+                        Source.empty
+                      } else {
                         if (logBaseExpressions.isEmpty) Source.empty
                         else {
                           val newAstInput = astInput.copy(
@@ -243,10 +245,11 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
                                       s"[$customerId] Exemplar query took ${(endTs - startTs) / 1000}s (EMA: ${ema / 1000}s) to complete"
                                     )
                                     recordExecutionTime("exemplar.query.time", endTs - startTs, s"orgId:$customerId")
-                                }
+                                  }
                               )
                           } else Source.empty
                         }
+                      }
 
                       val resultSrc = timeSeriesResponseSources.merge(logExemplarResponseSource)
                       val finalSrc =resultSrc.prepend(SegmentCacheManager.waitUntilScaled(queryId))
