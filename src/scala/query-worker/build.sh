@@ -7,5 +7,9 @@ export GIT_SHA=$(git rev-parse --short HEAD)
 
 ../gradlew clean build
 
-docker build --pull -f Dockerfile.local -t public.ecr.aws/cardinalhq.io/lakerunner/query-worker:$GIT_BRANCH_NAME-$GIT_SHA .
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -f Dockerfile.local \
+  -t public.ecr.aws/cardinalhq.io/lakerunner/query-worker:$GIT_BRANCH_NAME-$GIT_SHA .
+
 docker push public.ecr.aws/cardinalhq.io/lakerunner/query-worker:$GIT_BRANCH_NAME-$GIT_SHA
