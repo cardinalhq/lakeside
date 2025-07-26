@@ -11,6 +11,6 @@ export GIT_SHA=$(git rev-parse --short HEAD)
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -f Dockerfile.local \
-  -t public.ecr.aws/cardinalhq.io/lakerunner/query-api:$GIT_BRANCH_NAME-$GIT_SHA .
+  -t public.ecr.aws/cardinalhq.io/lakerunner/query-api:latest .
 
-docker push public.ecr.aws/cardinalhq.io/lakerunner/query-api:$GIT_BRANCH_NAME-$GIT_SHA
+docker push public.ecr.aws/cardinalhq.io/lakerunner/query-api:latest
