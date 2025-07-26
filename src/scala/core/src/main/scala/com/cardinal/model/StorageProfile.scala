@@ -14,4 +14,5 @@ case class StorageProfile(
   role: String,
   collectorType: Int,
   endpoint : Option[String],
+  useSsl: Boolean = true
 )

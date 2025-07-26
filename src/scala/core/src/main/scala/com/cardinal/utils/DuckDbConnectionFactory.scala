@@ -143,15 +143,19 @@ object DuckDbConnectionFactory {
         val endpoint = profile.endpoint.filter(_.nonEmpty)
           .getOrElse(s"s3.${profile.region}.amazonaws.com")
 
+        val useSsl = profile.useSsl
+
         logger.debug(
           s"Creating S3 secret for ${profile.storageProfileId} " +
             s"bucket=${profile.bucket}, region=${profile.region}, role=${profile.role}, " +
             s"endpoint=$endpoint"
         )
+
         val baseLines = Seq(
           s"TYPE S3",
           s"ENDPOINT '$endpoint'",
           s"URL_STYLE 'path'",
+          s"USE_SSL '$useSsl'",
           s"KEY_ID '${creds.getAWSAccessKeyId}'",
           s"SECRET '${creds.getAWSSecretKey}'"
         )

@@ -22,7 +22,8 @@ case class RawStorageProfile(
                               @JsonProperty("hosted") hosted: Option[Boolean],
                               @JsonProperty("endpoint") endpoint: Option[String],
                               @JsonProperty("insecure_tls") insecureTLS: Option[Boolean],
-                              @JsonProperty("use_path_style") usePathStyle: Option[Boolean]
+                              @JsonProperty("use_path_style") usePathStyle: Option[Boolean],
+                              @JsonProperty("use_ssl") useSsl: Option[Boolean],
                             )
 
 
@@ -66,6 +67,7 @@ object StorageProfileCacheFile {
         role = role,
         collectorType = 0,
         endpoint = raw.endpoint,
+        useSsl = raw.useSsl.getOrElse(true)
       )
     }
 }
