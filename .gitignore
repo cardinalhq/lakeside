@@ -35,7 +35,8 @@ out/
 /nbdist/
 /.nb-gradle/
 
-### VS Code ###
+### IDEs
 .vscode/
+.metals/
 
 idb/
