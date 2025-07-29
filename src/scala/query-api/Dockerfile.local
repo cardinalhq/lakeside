@@ -10,7 +10,7 @@ ARG TARGETARCH
 
 EXPOSE 7101
 
-ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar /app/libs/otel-javaagent.jar
+# ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar /app/libs/otel-javaagent.jar
 
 COPY libs/${TARGETOS}-${TARGETARCH}/lib-trigram.h /app/libs/lib-trigram.h
 COPY libs/${TARGETOS}-${TARGETARCH}/lib-trigram.so /app/libs/lib-trigram.so
@@ -22,4 +22,4 @@ COPY --from=builder snapshot-dependencies/ ./
 COPY --from=builder spring-boot-loader/ ./
 COPY --from=builder application/ ./
 
-CMD ["java", "-javaagent:/app/libs/otel-javaagent.jar", "-XX:+ExitOnOutOfMemoryError", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints", "-Dcom.sun.management.jmxremote", "-Dcom.sun.management.jmxremote.authenticate=false", "-Dcom.sun.management.jmxremote.ssl=false", "-Dcom.sun.management.jmxremote.port=9875", "-Dcom.sun.management.jmxremote.rmi.port=9875", "-Djava.rmi.server.hostname=localhost", "org.springframework.boot.loader.JarLauncher"]
+CMD ["java", "-XX:+ExitOnOutOfMemoryError", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints", "-Dcom.sun.management.jmxremote", "-Dcom.sun.management.jmxremote.authenticate=false", "-Dcom.sun.management.jmxremote.ssl=false", "-Dcom.sun.management.jmxremote.port=9875", "-Dcom.sun.management.jmxremote.rmi.port=9875", "-Djava.rmi.server.hostname=localhost", "org.springframework.boot.loader.JarLauncher"]
