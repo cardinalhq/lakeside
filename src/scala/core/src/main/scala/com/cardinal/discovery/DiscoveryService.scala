@@ -146,6 +146,14 @@ object DiscoveryService {
       .run()
   }
 
+  def scaleEcsTasks(clusterName: String, serviceName: String, replicaCount: Int): Unit = {
+    if (ecsClient.isDefined) {
+      ecsClient.get.updateService(
+        UpdateServiceRequest.builder().cluster(clusterName).service(serviceName).desiredCount(replicaCount).build()
+      )
+    }
+  }
+
   def apply(serviceName: String = queryWorkerServiceName)(implicit as: ActorSystem): Source[ClusterState, NotUsed] = {
     sourcesMap.computeIfAbsent(
       serviceName,

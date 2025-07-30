@@ -116,6 +116,13 @@ object SegmentCacheManager {
 
   private def scaleQueryWorkers(queryId: String, replicaCount: Int): Unit = {
     try {
+
+      /**
+       * If ECS, DiscoveryService.scaleEcsTasks(clusterName, QUERY_WORKER, replicaCount)
+       * logger.info(s"[$queryId] Successfully scaled query workers to $replicaCount")
+       * timeOfLastScaleRequest.set(System.currentTimeMillis())
+       */
+
       // Create an API instance
       val api = new AppsV1Api()
       // Define deployment details
