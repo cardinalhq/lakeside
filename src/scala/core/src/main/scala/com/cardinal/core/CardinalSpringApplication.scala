@@ -53,6 +53,9 @@ class CardinalSpringApplication(primarySources: Class[_]*) extends SpringApplica
     override def onApplicationEvent(event: ApplicationReadyEvent): Unit = {
       val version = VersionUtil.getVersion
       logger.info("{}Cardinal version: {}", cardinalArt, version)
+
+      val keys = System.getenv().keySet().toArray.sortBy(_.toString)
+      logger.info("{}", keys.mkString(", "))
     }
   })
 }
