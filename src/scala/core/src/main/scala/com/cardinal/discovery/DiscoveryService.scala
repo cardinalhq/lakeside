@@ -13,6 +13,8 @@ import com.cardinal.utils.Commons
 import com.cardinal.utils.Commons._
 import com.cardinal.utils.transport.HashRing
 import org.slf4j.LoggerFactory
+import software.amazon.awssdk.services.ecs.EcsClient
+import software.amazon.awssdk.services.ecs.model.{DescribeTasksRequest, ListTasksRequest, UpdateServiceRequest}
 
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
@@ -30,6 +32,8 @@ object DiscoveryService {
   private val queryWorkerServiceName = sys.env.getOrElse("QUERY_WORKER_SERVICE_NAME",
     throw new RuntimeException("QUERY_WORKER_SERVICE_NAME environment variable is not set!")
   )
+  private val ecsClusterName = sys.env.getOrElse("ECS_CLUSTER_NAME", "")
+  private val ecsClient: Option[EcsClient] = if (ecsClusterName.nonEmpty) Some(EcsClient.builder().build()) else None
   private val heartBeatingQueryWorkers = new ConcurrentHashMap[String, Long]() // podIp -> heartbeat websocket source
 
   def getYoungestWorkerStartTime: Long = {
@@ -80,9 +84,56 @@ object DiscoveryService {
     Try(hostName.split("\\.").head.replace(s"$queryWorkerServiceName-", "").toInt).getOrElse(-1)
   }
 
+  private def lookupEcs(
+                         clusterName: String,
+                         serviceName: String
+                       ): Future[ServiceDiscovery.Resolved] = {
+    try {
+      val tasks =
+        ecsClient.get.listTasks(ListTasksRequest.builder().cluster(clusterName).serviceName(serviceName).build())
+
+      if(!tasks.taskArns().isEmpty) {
+        val taskDetails = ecsClient.get
+          .describeTasks(DescribeTasksRequest.builder().cluster(clusterName).tasks(tasks.taskArns()).build())
+          .tasks()
+
+        val resolvedTargets = taskDetails.asScala.toList
+          .filter(_.lastStatus().equals("RUNNING"))
+          .map(t => {
+            t.containers().get(0).networkInterfaces().get(0).privateIpv4Address()
+          })
+          .sorted
+          .map(taskIp => {
+            val taskInet4Address = InetAddress.getByName(taskIp)
+            ServiceDiscovery.ResolvedTarget(host = taskIp, port = None, address = Some(taskInet4Address))
+          })
+        Future.successful(ServiceDiscovery.Resolved(serviceName = serviceName, addresses = resolvedTargets))
+      }
+      else {
+        Future.successful(ServiceDiscovery.Resolved(serviceName = serviceName, addresses = Seq.empty))
+      }
+    } catch {
+      case e: Exception =>
+        logger.error("query-worker discovery failed with error", e)
+        throw e
+    }
+  }
+
+  def scaleEcsTasks(replicaCount: Int): Unit = {
+    if (ecsClient.isDefined) {
+      ecsClient.get.updateService(
+        UpdateServiceRequest.builder().cluster(ecsClusterName).service(queryWorkerServiceName).desiredCount(replicaCount).build()
+      )
+    }
+  }
+
   private def lookup(serviceDiscovery: ServiceDiscovery): Source[ServiceDiscovery.Resolved, NotUsed] = {
-    val eventualResolved = serviceDiscovery.lookup(lookup = Lookup(queryWorkerServiceName), 30.seconds)
-    Source.future(eventualResolved)
+    if (ecsClusterName.nonEmpty) {
+      Source.future(lookupEcs(ecsClusterName, queryWorkerServiceName))
+    } else {
+      val eventualResolved = serviceDiscovery.lookup(lookup = Lookup(queryWorkerServiceName), 30.seconds)
+      Source.future(eventualResolved)
+    }
   }
 
   private def getHashRing: HashRing = {
@@ -144,14 +195,6 @@ object DiscoveryService {
       }
       .toMat(Sink.ignore)(Keep.right)
       .run()
-  }
-
-  def scaleEcsTasks(clusterName: String, serviceName: String, replicaCount: Int): Unit = {
-    if (ecsClient.isDefined) {
-      ecsClient.get.updateService(
-        UpdateServiceRequest.builder().cluster(clusterName).service(serviceName).desiredCount(replicaCount).build()
-      )
-    }
   }
 
   def apply(serviceName: String = queryWorkerServiceName)(implicit as: ActorSystem): Source[ClusterState, NotUsed] = {

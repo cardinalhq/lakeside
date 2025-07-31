@@ -6,7 +6,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model._
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import com.cardinal.datastructures.EMA
-import com.cardinal.discovery.DiscoveryService.getTargetPod
+import com.cardinal.discovery.DiscoveryService.{getTargetPod, scaleEcsTasks}
 import com.cardinal.discovery.{DiscoveryService, Pod}
 import com.cardinal.model.query.common.SegmentInfo
 import com.cardinal.model.{DownloadSegmentRequest, Heartbeat, SegmentRequest}
@@ -115,27 +115,21 @@ object SegmentCacheManager {
   }
 
   private def scaleQueryWorkers(queryId: String, replicaCount: Int): Unit = {
+    if (isRunningInKubernetes) {
+      scaleQueryWorkersKubernetes(queryId, replicaCount)
+      return
+    }
+    DiscoveryService.scaleEcsTasks(replicaCount)
+  }
+
+  private def scaleQueryWorkersKubernetes(queryId: String, replicaCount: Int): Unit = {
     try {
-
-      /**
-       * If ECS, DiscoveryService.scaleEcsTasks(clusterName, QUERY_WORKER, replicaCount)
-       * logger.info(s"[$queryId] Successfully scaled query workers to $replicaCount")
-       * timeOfLastScaleRequest.set(System.currentTimeMillis())
-       */
-
-      // Create an API instance
       val api = new AppsV1Api()
-      // Define deployment details
       val namespace = sys.env.getOrElse("POD_NAMESPACE", "cardinalhq")
-
-      // Get the existing deployment
       val deployment = api.readNamespacedDeployment(queryWorkerDeploymentName, namespace, null)
-
-      // Update the replica count
       val spec = deployment.getSpec
       if (spec != null) {
         spec.setReplicas(replicaCount)
-        // Update the deployment with the new replica count
         api.replaceNamespacedDeployment(queryWorkerDeploymentName, namespace, deployment, null, null, null, null)
         logger.info(s"[$queryId] Successfully requested worker scale to $replicaCount")
         timeOfLastScaleRequest.set(System.currentTimeMillis())

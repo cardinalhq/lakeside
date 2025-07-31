@@ -33,12 +33,20 @@ object StorageProfileCacheFile {
     .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
   def fromFile(filePath: String): StorageProfileCacheFile = {
-    val profiles = Using.resource(new FileInputStream(filePath)) { in =>
-      val raw = mapper.readValue(in, new TypeReference[List[RawStorageProfile]] {})
-      toStorageProfiles(raw)
+    if (filePath.startsWith("env:")) {
+      val envVar = filePath.substring("env:".length)
+      val yaml = sys.env.getOrElse(
+        envVar,
+        throw new IllegalArgumentException(s"Environment variable '$envVar' is not set")
+      )
+      fromYamlString(yaml)
+    } else {
+      val profiles = Using.resource(new FileInputStream(filePath)) { in =>
+        val rawList = mapper.readValue(in, new TypeReference[List[RawStorageProfile]] {})
+        toStorageProfiles(rawList)
+      }
+      new StorageProfileCacheFile(profiles)
     }
-
-    new StorageProfileCacheFile(profiles)
   }
 
   def fromYamlString(yaml: String): StorageProfileCacheFile = {

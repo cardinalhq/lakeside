@@ -25,7 +25,6 @@ class CoreConfiguration {
 
   @Bean(value = Array("storageProfileCache"))
   def storageProfileCache(actorSystem: ActorSystem): StorageProfileCache = {
-    // if STORAGE_PROFILE_FILE is set, use that to initialize the cache
     val storageProfileFile = sys.env.get("STORAGE_PROFILE_FILE")
     if (storageProfileFile.isDefined) {
       logger.info("Using storage profile file: {}", storageProfileFile.get)
