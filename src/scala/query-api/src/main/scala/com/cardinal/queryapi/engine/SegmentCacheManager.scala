@@ -39,9 +39,12 @@ object SegmentCacheManager {
   private val queryWorkerDeploymentName = sys.env.getOrElse("QUERY_WORKER_DEPLOYMENT_NAME",
     throw new RuntimeException("QUERY_WORKER_DEPLOYMENT_NAME environment variable is not set!")
   )
-  private val podlabels = sys.env.getOrElse("AKKA_DISCOVERY_KUBERNETES_API_POD_LABEL_SELECTOR",
-    throw new RuntimeException("AKKA_DISCOVERY_KUBERNETES_API_POD_LABEL_SELECTOR environment variable is not set!"))
-  logger.info(s"Using pod label selector: $podlabels")
+  private val podlabels = sys.env.getOrElse("AKKA_DISCOVERY_KUBERNETES_API_POD_LABEL_SELECTOR", "")
+  if (podlabels.isEmpty) {
+    logger.warn("AKKA_DISCOVERY_KUBERNETES_API_POD_LABEL_SELECTOR is not set, probably broken if running in Kubernetes.")
+  } else {
+    logger.info(s"Using pod label selector: $podlabels")
+  }
 
   def waitUntilScaled(queryId: String): Source[Heartbeat, NotUsed] = {
     Source
