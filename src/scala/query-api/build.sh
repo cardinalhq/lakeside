@@ -1,6 +1,5 @@
 #!/bin/sh
 
-# Exit immediately if a command exits with a non-zero status
 set -e
 
 export GIT_BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
@@ -14,5 +13,3 @@ docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -f Dockerfile.local \
   -t public.ecr.aws/cardinalhq.io/lakerunner/query-api:latest .
-
-#docker push public.ecr.aws/cardinalhq.io/lakerunner/query-api:latest
