@@ -224,23 +224,19 @@ object Environment {
   }
 
   def getSpringProfiles(): List[String] = {
-    //TODO: determine dev or test as well
-
-    if (!isInKubernetes) {
-      List(CLOUD_PROVIDER_LOCAL)
-    } else {
-      if (currentRegion.isAws){
+//    if (!isInKubernetes) {
+//      List(CLOUD_PROVIDER_LOCAL)
+//    } else {
+      if (currentRegion.isAws) {
         List("aws")
-      }else if (currentRegion.isGcp){
+      } else if (currentRegion.isGcp) {
         List("gcp")
       }
       else{
         List.empty[String]
       }
-
-    }
+//    }
   }
-
 }
 
 class Environment{
