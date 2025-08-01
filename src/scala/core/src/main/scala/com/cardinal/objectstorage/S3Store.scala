@@ -47,7 +47,6 @@ class S3Store(s3ClientCache: S3ClientCache) extends BaseObjectStore with Retryab
   }
 
   override def _downloadObject(bucketName: String, key: String, destinationFile: File): Unit = {
-
     try {
       val metadata =
         s3ClientCache.getClient(bucketName).getObject(new GetObjectRequest(bucketName, key), destinationFile)
