@@ -6,7 +6,6 @@ import java.io.File
 import java.nio.file.{Files, Paths}
 
 abstract class BaseObjectStore extends ObjectStore {
-
   private val logger = LoggerFactory.getLogger(classOf[BaseObjectStore])
 
   private def createDestinationFile(key: String): File = {
@@ -16,12 +15,6 @@ abstract class BaseObjectStore extends ObjectStore {
     }
     destinationFile
   }
-
-  override def putObject(bucketName: String, key: String, file: File): Unit = {
-    logger.debug(s"Putting object $key into bucket $bucketName")
-    _putObject(bucketName, key, file)
-  }
-  def _putObject(bucketName: String, key: String, file: File): Unit
 
   override def downloadObject(bucketName: String, key: String): (Boolean, Long) = {
     logger.debug(s"Downloading object $key from bucket $bucketName")
@@ -45,16 +38,4 @@ abstract class BaseObjectStore extends ObjectStore {
     _downloadAllObjects(bucketName, prefix, localDestination)
   }
   def _downloadAllObjects(bucketName: String, prefix: String, localDestination: String): Long
-
-  override def moveObject(bucketName: String, fromKey: String, toKey: String): Boolean = {
-    logger.debug(s"Moving object from $fromKey to $toKey in bucket $bucketName")
-    _moveObject(bucketName, fromKey, toKey)
-  }
-  def _moveObject(bucketName: String, fromKey: String, toKey: String): Boolean
-
-  override def deleteObjects(bucketName: String, keys: Set[String]): Unit = {
-    logger.debug(s"Deleting objects from bucket $bucketName")
-    _deleteObjects(bucketName, keys)
-  }
-  def _deleteObjects(bucketName: String, keys: Set[String]): Unit
 }
