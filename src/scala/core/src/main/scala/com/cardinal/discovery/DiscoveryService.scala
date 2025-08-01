@@ -50,11 +50,7 @@ object DiscoveryService {
       null
     } else {
       val slotId = Math.abs(segmentId.replace("tbl_", "").hashCode) % infoRef.numSlots
-      // This can happen when the cluster is restarting
-      if (!infoRef.podBySlot.contains(slotId)) {
-        logger.warn(s"Did not find slotId = $slotId, falling back to local")
-        infoRef.podBySlot.values.find(_.isLocal).get
-      } else infoRef.podBySlot(slotId)
+      infoRef.podBySlot(slotId)
     }
   }
 
@@ -68,13 +64,11 @@ object DiscoveryService {
     resolved.addresses
       .map(resolved => {
         if (!Commons.isRunningInKubernetes) {
-          Pod(ip = resolved.host, slotId = 0, isLocal = true)
+          Pod(ip = resolved.host, slotId = 0)
         } else {
           val ip = resolved.address.get.getHostAddress
           val slotId = toSlotId(resolved.address.get.getHostName)
-          val localHostName = InetAddress.getLocalHost.getCanonicalHostName
-          val localSlotId = toSlotId(localHostName)
-          Pod(ip = ip, slotId = slotId, isLocal = slotId == localSlotId)
+          Pod(ip = ip, slotId = slotId)
         }
       })
       .toSet
@@ -227,7 +221,7 @@ object DiscoveryService {
                           resolved.toList
                             .sortWith((p1, p2) => p1.lastTwoIpSegments < p2.lastTwoIpSegments)
                             .zipWithIndex
-                            .map(e => e._1.copy(slotId = e._2, isLocal = false))
+                            .map(e => e._1.copy(slotId = e._2))
                             .toSet
                         } else resolved
 
