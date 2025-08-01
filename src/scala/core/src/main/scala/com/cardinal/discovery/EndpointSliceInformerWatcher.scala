@@ -22,8 +22,6 @@ object EndpointSliceInformerWatcher {
                                                                         system: ActorSystem,
                                                                         mat: Materializer
   ): Source[ClusterState, NotUsed] = {
-    implicit val ec: ExecutionContext = system.dispatcher
-
     val config = new ConfigBuilder()
       .withNamespace(namespace)
       .build()
