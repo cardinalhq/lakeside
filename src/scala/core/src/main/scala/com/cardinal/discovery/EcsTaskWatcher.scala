@@ -2,29 +2,31 @@ package com.cardinal.discovery
 
 import akka.NotUsed
 import akka.actor.ActorSystem
-import akka.stream.Materializer
+import akka.stream.{Materializer, OverflowStrategy}
 import akka.stream.scaladsl.{BroadcastHub, Keep, Source}
-import akka.stream.OverflowStrategy
 import software.amazon.awssdk.services.ecs.EcsClient
 import software.amazon.awssdk.services.ecs.model.{DescribeTasksRequest, ListTasksRequest, Task}
-import scala.jdk.CollectionConverters._
-import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext
+
 import java.util.concurrent.atomic.AtomicReference
+import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
 
 object EcsTaskWatcher {
+
   /**
-   * Watch the given ECS service in `clusterName`, emitting ClusterState diffs
-   * whenever the set of task IPs changes.
-   */
+    * Watch the given ECS service in `clusterName`, emitting ClusterState diffs
+    * whenever the set of task IPs changes.
+    */
   def startWatching(
-                     serviceName: String,
-                     clusterName: String,
-                     pollingInterval: FiniteDuration = 10.seconds
-                   )(implicit
-                     system: ActorSystem,
-                     mat: Materializer
-                   ): Source[ClusterState, NotUsed] = {
+    serviceName: String,
+    clusterName: String,
+    pollingInterval: FiniteDuration = 10.seconds
+  )(
+    implicit
+    system: ActorSystem,
+    mat: Materializer
+  ): Source[ClusterState, NotUsed] = {
     implicit val ec: ExecutionContext = system.dispatcher
 
     val ecs: EcsClient = EcsClient.builder().build()
@@ -44,15 +46,14 @@ object EcsTaskWatcher {
             att.details.asScala.find(_.name() == "privateIPv4Address").map(_.value())
           }
           .map { ip =>
-            // TODO ECS doesn’t have a stable “slot” ordinal—default to 0
-            val slotId   = 0
-            Pod(ip, slotId)
+            Pod(ip)
           }
       }.toSet
     }
 
     def rebuildPodSet(): Set[Pod] = {
-      val listReq = ListTasksRequest.builder()
+      val listReq = ListTasksRequest
+        .builder()
         .cluster(clusterName)
         .serviceName(serviceName)
         .build()
@@ -61,7 +62,8 @@ object EcsTaskWatcher {
       if (taskArns.isEmpty) {
         Set.empty
       } else {
-        val descReq = DescribeTasksRequest.builder()
+        val descReq = DescribeTasksRequest
+          .builder()
           .cluster(clusterName)
           .tasks(taskArns.asJava)
           .build()
@@ -75,7 +77,7 @@ object EcsTaskWatcher {
       val oldSet = currentPods.getAndSet(newSet)
       if (newSet != oldSet) {
         val state = ClusterState(
-          added   = newSet.diff(oldSet),
+          added = newSet.diff(oldSet),
           removed = oldSet.diff(newSet),
           current = newSet
         )

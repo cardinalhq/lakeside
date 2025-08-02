@@ -140,9 +140,11 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
                     complete {
                       HttpEntity.Chunked(
                         MediaTypes.`text/event-stream`.toContentType,
-                        Source.single(Done()).map(_.toChunkStreamPart)
+                        Source
+                          .single(Done())
+                          .map(_.toChunkStreamPart)
                           .prepend(src)
-                          .prepend(SegmentCacheManager.waitUntilScaled("tagsQuery").map(_.toChunkStreamPart))
+                          .prepend(SegmentCacheManager.waitUntilScaled().map(_.toChunkStreamPart))
                       )
                     }
                   }
@@ -215,7 +217,7 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
                         )
 
                       val logBaseExpressions = astInput.baseExpressions.filter(_._2.isEventTelemetryType)
-                      val logExemplarResponseSource = if(timeseriesOnly.getOrElse(false)) {
+                      val logExemplarResponseSource = if (timeseriesOnly.getOrElse(false)) {
                         Source.empty
                       } else {
                         if (logBaseExpressions.isEmpty) Source.empty
@@ -245,14 +247,14 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
                                       s"[$customerId] Exemplar query took ${(endTs - startTs) / 1000}s (EMA: ${ema / 1000}s) to complete"
                                     )
                                     recordExecutionTime("exemplar.query.time", endTs - startTs, s"orgId:$customerId")
-                                  }
+                                }
                               )
                           } else Source.empty
                         }
                       }
 
                       val resultSrc = timeSeriesResponseSources.merge(logExemplarResponseSource)
-                      val finalSrc =resultSrc.prepend(SegmentCacheManager.waitUntilScaled(queryId))
+                      val finalSrc = resultSrc.prepend(SegmentCacheManager.waitUntilScaled())
 
                       complete {
                         HttpEntity.Chunked(

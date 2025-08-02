@@ -1,54 +1,149 @@
 package com.cardinal.discovery
 
-import akka.NotUsed
+import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.{HttpEntity, HttpRequest}
+import akka.http.scaladsl.unmarshalling.sse.EventStreamParser
 import akka.stream.Materializer
-import akka.stream.scaladsl.Source
-import java.util.concurrent.atomic.AtomicReference
-import scala.collection.mutable
-import scala.concurrent.ExecutionContext
+import akka.stream.scaladsl.{Keep, Sink, Source}
+import com.cardinal.utils.Commons.{QUERY_WORKER_HEARTBEAT, QUERY_WORKER_PORT}
+import com.typesafe.config.ConfigFactory
+import org.slf4j.LoggerFactory
+
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+import scala.concurrent.{ExecutionContextExecutor, Future}
+import scala.concurrent.duration.{Duration, DurationInt, MILLISECONDS}
+import scala.util.{Failure, Success}
 
 class WorkerManager(
-                     watcher: Source[ClusterState, NotUsed],
-                     minWorkers: Int,
-                     maxWorkers: Int,
-                     scaler: WorkerScaler
-                   )(implicit system: ActorSystem, mat: Materializer) {
+  watcher: Source[ClusterState, NotUsed],
+  minWorkers: Int,
+  maxWorkers: Int,
+  scaler: ClusterScaler
+)(implicit system: ActorSystem, mat: Materializer) {
+  private implicit val ec: ExecutionContextExecutor = system.dispatcher
 
-  private implicit val ec: ExecutionContext = system.dispatcher
+  private final val logger = LoggerFactory.getLogger(getClass)
 
   private val currentPods = new AtomicReference[Set[Pod]](Set.empty)
-  private val slotMap   = mutable.Map.empty[Pod, Int]
-  private val freeSlots = mutable.TreeSet.empty[Int]
+  private val readyPods = new AtomicReference[Set[Pod]](Set.empty)
+  private val timeOfLastQuery = new AtomicLong(0)
+  private val timeOfLastScaleRequest = new AtomicLong(0)
+  private val cfg = ConfigFactory.load()
+  private val scaleUpWaitTime = cfg.getInt("scale-up.wait.time.minutes")
+  private val scaleDownWaitTime = cfg.getInt("scale-down.wait.time.minutes")
 
   watcher.runForeach { state =>
-    state.removed.foreach { pod =>
-      slotMap.remove(pod).foreach(freeSlots += _)
-    }
-
-    state.added.toSeq.sortBy(_.ip).foreach { pod =>
-      val slot = if (freeSlots.nonEmpty) freeSlots.min
-      else slotMap.size + freeSlots.size
-      freeSlots  -= slot
-      slotMap(pod) = slot
-    }
-
     currentPods.set(state.current)
 
-    val sz = state.current.size
-    if (sz < minWorkers)       scaler.scaleTo(minWorkers)
-    else if (sz > maxWorkers)  scaler.scaleTo(maxWorkers)
+    state.added.foreach { pod =>
+      startHeartBeatingWithQueryWorker(pod).onComplete {
+        case Success(_) =>
+          readyPods.updateAndGet(_ + pod)
+        case Failure(ex) =>
+          system.log.warning(s"Health-check failed for $pod: $ex")
+      }
+    }
+
+    state.removed.foreach { pod =>
+      readyPods.updateAndGet(_ - pod)
+    }
+
+    enforceBoundsAndMaybeScaleDown()
   }
 
-  /**
-   * Pick the same Pod for each key by hashing and modulo over stable slots.
-   */
-  def getWorkerFor(key: String): Option[Pod] = {
-    val podsBySlot = slotMap.toSeq.sortBy(_._2).map(_._1)
-    if (podsBySlot.isEmpty) None
-    else {
-      val idx = (key.hashCode.abs % podsBySlot.size)
-      Some(podsBySlot(idx))
+  system.scheduler.scheduleWithFixedDelay(
+    initialDelay = scaleDownWaitTime.minutes,
+    delay = scaleDownWaitTime.minutes
+  )(() => enforceBoundsAndMaybeScaleDown())
+
+  private def enforceBoundsAndMaybeScaleDown(): Unit = {
+    val sz = currentPods.get.size
+
+    if (sz > maxWorkers) {
+      scaleTo(maxWorkers)
+      return
     }
+
+    val idleMinutes = minutesSince(timeOfLastQuery)
+    val sinceLastScale = minutesSince(timeOfLastScaleRequest)
+    if (idleMinutes >= scaleDownWaitTime &&
+        sinceLastScale >= scaleDownWaitTime &&
+        sz > minWorkers) {
+      scaleTo(minWorkers)
+    }
+  }
+
+  def isScaledUp: Boolean = {
+    val sz = podCount
+    sz >= maxWorkers
+  }
+
+  def recordQuery(): Unit = {
+    timeOfLastQuery.set(System.currentTimeMillis())
+    maybeScaleUp()
+  }
+
+  private def maybeScaleUp(): Unit = {
+    val sinceLast = minutesSince(timeOfLastScaleRequest)
+    if (timeOfLastScaleRequest.get == 0 || sinceLast >= scaleUpWaitTime) {
+      scaleTo(maxWorkers)
+    }
+  }
+
+  private def scaleTo(desired: Int): Unit = {
+    val tgt = math.max(minWorkers, math.min(maxWorkers, desired))
+    scaler.scaleTo(tgt)
+    timeOfLastScaleRequest.set(System.currentTimeMillis())
+  }
+
+  private def minutesSince(al: AtomicLong): Long = {
+    val ts = al.get()
+    if (ts == 0) 0
+    else Duration(System.currentTimeMillis() - ts, MILLISECONDS).toMinutes
+  }
+
+  def podCount: Int = readyPods.get().size
+
+  def getWorkerFor(key: String): Option[Pod] = {
+    val pods = readyPods.get().toSeq
+    Rendezvous.select[Pod](key, pods, _.ip)
+  }
+
+  private def startHeartBeatingWithQueryWorker(pod: Pod)(implicit system: ActorSystem): Future[Done] = {
+    val ip = pod.ip
+
+    logger.info(s"Starting to heartbeat with ${pod.ip}")
+    var alreadyAdded = false
+
+    Source
+      .single(HttpRequest(uri = QUERY_WORKER_HEARTBEAT, entity = HttpEntity("")))
+      .via(Http().outgoingConnection(host = ip, port = QUERY_WORKER_PORT))
+      .flatMapConcat(resp => resp.entity.dataBytes)
+      .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
+      .map { _ =>
+        if (!alreadyAdded) {
+          readyPods.updateAndGet(_ + pod)
+          alreadyAdded = true
+          logger.info(s"Heartbeat established for $ip, added to readyPods")
+        }
+      }
+      .watchTermination() { (_, f) =>
+        f.onComplete { _ =>
+          readyPods.updateAndGet(_ - pod)
+          logger.info(s"Heartbeat terminated for $ip, removed from readyPods")
+        }
+      }
+      .toMat(Sink.ignore)(Keep.right)
+      .run()
+  }
+}
+
+object WorkerManager {
+  def apply()(implicit system: ActorSystem, mat: Materializer): WorkerManager = {
+    val minWorkers = sys.env.getOrElse("NUM_MIN_QUERY_WORKERS", "2").toInt
+    val maxWorkers = sys.env.getOrElse("NUM_MAX_QUERY_WORKERS", "30").toInt
+    new WorkerManager(ClusterWatcher.watch(), minWorkers, maxWorkers, ClusterScaler.load())
   }
 }

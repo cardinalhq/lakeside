@@ -1,5 +1,5 @@
 package com.cardinal.discovery
 
-class ConstantScaler extends WorkerScaler {
+class ConstantScaler extends ClusterScaler {
   override def scaleTo(desiredReplicas: Int): Unit = {}
 }

@@ -10,7 +10,6 @@ import akka.stream.scaladsl.{Flow, Source}
 import akka.util.ByteString
 import com.cardinal.config.StorageProfileCache
 import com.cardinal.dbutils.DBDataSources
-import com.cardinal.discovery.DiscoveryService
 import com.cardinal.eval.EvalUtils.astEvalFlow
 import com.cardinal.logs.LogCommons._
 import com.cardinal.model._
@@ -146,7 +145,6 @@ class QueryEngineV2(
   actorSystem: ActorSystem,
   config: Config,
   segmentCacheManager: SegmentCacheManager,
-//  metricInfoCache: MetricInfoCache,
   storageProfileCache: StorageProfileCache
 ) {
   implicit val as: ActorSystem = actorSystem
@@ -485,7 +483,7 @@ class QueryEngineV2(
     customerId: String,
     queryId: String
   ): Source[GenericSSEPayload, NotUsed] = {
-    // treat as an exemplars query
+    // treat as a query for exemplars
     val modifiedBaseExpr = baseExpr.copy(chartOpts = None)
     segmentSource(
       baseExpressions = List(baseExpr.copy(id = baseExprId)),
@@ -571,13 +569,13 @@ class QueryEngineV2(
           startTs = startDateTime,
           endTs = endDateTime,
           frequency = frequency,
-          executionGroupSize = executionGroupSize()
+          executionGroupSize = executionGroupSize(segmentCacheManager)
         )
       })
   }
 
-  private def executionGroupSize(): Int = {
-    val numWorkers = Math.max(6, DiscoveryService.getNumPods)
+  private def executionGroupSize(segmentCacheManager: SegmentCacheManager): Int = {
+    val numWorkers = Math.max(6, segmentCacheManager.readyPods)
     numWorkers * config.getInt("query.worker.num.file.capacity.per.vCPU") * config.getInt("query.worker.num.vCPU")
   }
 

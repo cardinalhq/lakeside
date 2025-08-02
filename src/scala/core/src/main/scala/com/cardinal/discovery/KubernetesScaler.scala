@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory
 import scala.jdk.CollectionConverters._
 import java.util.concurrent.atomic.AtomicInteger
 
-class KubernetesScaler(namespace: String, labels: Map[String, String]) extends WorkerScaler {
+class KubernetesScaler(namespace: String, labels: Map[String, String]) extends ClusterScaler {
   private val logger = LoggerFactory.getLogger(getClass)
   private val client: KubernetesClient = new KubernetesClientBuilder().build()
   private val lastDesired = new AtomicInteger(0)
@@ -14,7 +14,8 @@ class KubernetesScaler(namespace: String, labels: Map[String, String]) extends W
 
   override def scaleTo(desiredReplicas: Int): Unit = {
     try {
-      val deployments = client.apps()
+      val deployments = client
+        .apps()
         .deployments()
         .inNamespace(namespace)
         .withLabels(labelSelector)
@@ -29,7 +30,8 @@ class KubernetesScaler(namespace: String, labels: Map[String, String]) extends W
 
       deployments.foreach { d =>
         val name = d.getMetadata.getName
-        client.apps()
+        client
+          .apps()
           .deployments()
           .inNamespace(namespace)
           .withName(name)
@@ -42,8 +44,9 @@ class KubernetesScaler(namespace: String, labels: Map[String, String]) extends W
         logger.error(s"Error scaling to $desiredReplicas replicas", t)
     }
   }
+}
 
 object KubernetesScaler {
-  def apply(namespace: String, labels: (String, String)*): KubernetesScaler =
-    new KubernetesScaler(namespace, labels.toMap)
+  def apply(cfg: KubernetesClusterConfig): KubernetesScaler =
+    new KubernetesScaler(cfg.namespace, cfg.serviceLabels)
 }

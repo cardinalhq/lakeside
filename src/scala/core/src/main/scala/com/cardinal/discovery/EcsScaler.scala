@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * @param clusterName   the ECS cluster name where your service is running
  * @param serviceName   the ECS service name to scale
  */
-class EcsScaler(clusterName: String, serviceName: String) extends WorkerScaler {
+class EcsScaler(clusterName: String, serviceName: String) extends ClusterScaler {
   private val logger = LoggerFactory.getLogger(getClass)
 
   private val ecs: EcsClient = EcsClient.builder().build()
@@ -38,6 +38,6 @@ class EcsScaler(clusterName: String, serviceName: String) extends WorkerScaler {
 }
 
 object EcsScaler {
-  def apply(clusterName: String, serviceName: String): EcsScaler =
-    new EcsScaler(clusterName, serviceName)
+  def apply(config: EcsClusterConfig): EcsScaler =
+    new EcsScaler(config.clusterName, config.serviceName)
 }

@@ -35,8 +35,7 @@ class QueryApiConfiguration {
   @Scope(value = ConfigurableBeanFactory.SCOPE_SINGLETON)
   def segmentCacheManager(actorSystem: ActorSystem): SegmentCacheManager = {
     implicit val as: ActorSystem = actorSystem
-    SegmentCacheManager.startDiscovery()
-    new SegmentCacheManager(actorSystem = actorSystem)
+    new SegmentCacheManager()
   }
 
   @Bean

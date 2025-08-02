@@ -22,7 +22,6 @@ import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success, Try}
 
 object Commons {
-
   private val logger = LoggerFactory.getLogger(getClass)
   val CARDINAL_HQ_PREFIX: String = "_cardinalhq"
   private val RESOURCE_PREFIX: String = "resource"
@@ -84,7 +83,6 @@ object Commons {
       SERVICE_NAME,
       RESOURCE_FILE
     )
-
 
   val DIMENSIONS_TO_INDEX: List[String] =
     List[String](TELEMETRY_TYPE, NAME, LEVEL, TRACE_ID) ++ INFRA_DIMENSIONS
@@ -492,26 +490,6 @@ object Commons {
     (start, end)
   }
 
-  private def deleteDirectory(directory: File): Unit = {
-    val files = directory.listFiles()
-    if (files != null) {
-      for (file <- files) {
-        if (file.isDirectory) {
-          deleteDirectory(file)
-        } else {
-          val deleted = file.delete()
-          logger.info(s"Deleting ${file.toPath}?$deleted")
-        }
-      }
-    }
-
-    if (directory.delete()) {
-      logger.info(s"Directory ${directory.getAbsolutePath} deleted successfully.")
-    } else {
-      logger.error(s"Failed to delete directory ${directory.getAbsolutePath}")
-    }
-  }
-
   def toSegmentPathOnS3(bucketName: String, dataset: String, dateInt: String, hour: String, segmentId: String, customerId: String, collectorId: String): String = {
     s"${
       getDbPath(bucketName = bucketName,
@@ -532,5 +510,3 @@ object Commons {
     sys.env.getOrElse("QUERY_STACK", "global") == "global"
   }
 }
-
-
