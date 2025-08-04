@@ -122,33 +122,45 @@ class WorkerManager(
 
   private def startHeartBeatingWithQueryWorker(pod: Pod)(implicit system: ActorSystem): Future[Done] = {
     val ip = pod.ip
+    val req = HttpRequest(uri = QUERY_WORKER_HEARTBEAT, entity = HttpEntity.Empty)
     logger.info(s"Starting to heartbeat with $ip")
     @volatile var alreadyAdded = false
 
-    val restartSettings =
-      RestartSettings(2.seconds, 2.seconds,0.0).withMaxRestarts(30, 1.minute)
+    val settings =
+      RestartSettings(2.seconds, 2.seconds, 0.0)
+        .withMaxRestarts(30, 1.minute)
 
-    val heartbeatSource: Source[Unit, _] =
-      RestartSource.withBackoff(restartSettings) { () =>
-        Source.single(HttpRequest(uri = QUERY_WORKER_HEARTBEAT, entity = HttpEntity.Empty))
-          .via(Http().outgoingConnection(host = ip, port = QUERY_WORKER_PORT))
-          .flatMapConcat(_.entity.dataBytes)
-          .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
-          .map { _ =>
-            if (!alreadyAdded) {
-              readyPods.updateAndGet(_ + pod)
-              alreadyAdded = true
-              logger.info(s"Heartbeat established for $ip, added to readyPods")
-            }
+    val connectionFlow = Http().outgoingConnection(ip, QUERY_WORKER_PORT)
+
+    val initialConnect = RestartSource.withBackoff(settings) { () =>
+      Source.single(req)
+        .via(connectionFlow)
+        .flatMapConcat(_.entity.dataBytes)
+        .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
+        .map { _ =>
+          if (!alreadyAdded) {
+            readyPods.updateAndGet(_ + pod)
+            alreadyAdded = true
+            logger.info(s"Heartbeat established for $ip")
           }
-      }
+        }
+        .take(1)
+    }
 
-    heartbeatSource
-      .watchTermination() { (_, termFut) =>
-        termFut.onComplete { _ =>
+    val steadyHeartbeat: Source[Unit, _] =
+      Source.single(req)
+        .via(connectionFlow)
+        .flatMapConcat(_.entity.dataBytes)
+        .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
+        .map(_ => ())
+
+    val pulse = initialConnect.concat(steadyHeartbeat)
+    pulse
+      .watchTermination() { (_, doneFut) =>
+        doneFut.onComplete { _ =>
           readyPods.updateAndGet(_ - pod)
           logger.info(s"Heartbeat terminated for $ip, removed from readyPods")
-          // TODO: ask the manager to murder this pod now that heartbeat never recovered
+          // TODO: ask the manager to murder this pod now that it really is gone
         }
       }
       .toMat(Sink.ignore)(Keep.right)
