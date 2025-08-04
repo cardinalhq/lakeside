@@ -46,12 +46,14 @@ class CardinalSpringApplication(primarySources: Class[_]*) extends SpringApplica
       |""".stripMargin
 
   // Register a listener to print the version when the application is ready
-  addListeners(_ => {
-    val version = VersionUtil.getVersion
-    //logger.info("{}Cardinal version: {}", cardinalArt, version)
-    logger.info("Cardinal version: {}", version)
+  addListeners(new ApplicationListener[ApplicationReadyEvent] {
+    override def onApplicationEvent(event: ApplicationReadyEvent): Unit = {
+      val version = VersionUtil.getVersion
+      //logger.info("{}Cardinal version: {}", cardinalArt, version)
+      logger.info("Cardinal version: {}", version)
 
-    val keys = System.getenv().keySet().toArray.sortBy(_.toString)
-    logger.info("{}", keys.mkString(", "))
+      val keys = System.getenv().keySet().toArray.sortBy(_.toString)
+      logger.info("{}", keys.mkString(", "))
+    }
   })
 }
