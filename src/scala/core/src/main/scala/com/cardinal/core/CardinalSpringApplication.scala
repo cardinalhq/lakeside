@@ -6,14 +6,11 @@ import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.ApplicationListener
 
 class CardinalSpringApplication(primarySources: Class[_]*) extends SpringApplication(primarySources: _*) {
-  // You can override methods or add custom behavior here
-
   private val logger = LoggerFactory.getLogger(getClass)
   setAdditionalProfiles(Environment.getSpringProfiles(): _*)
 
   private val cardinalArt: String =
     """
-
       |                                &&&&X;.         :x$&&&&&&X;
       |                          &&&&Xxx++++xxX$X+:.:::.;X+:.:$: . .;x.
       |                      &&&&&$$$$$$$X$X:.;x++;:    :x xxxx$X;     :x
@@ -49,13 +46,12 @@ class CardinalSpringApplication(primarySources: Class[_]*) extends SpringApplica
       |""".stripMargin
 
   // Register a listener to print the version when the application is ready
-  addListeners(new ApplicationListener[ApplicationReadyEvent] {
-    override def onApplicationEvent(event: ApplicationReadyEvent): Unit = {
-      val version = VersionUtil.getVersion
-      logger.info("{}Cardinal version: {}", cardinalArt, version)
+  addListeners(_ => {
+    val version = VersionUtil.getVersion
+    //logger.info("{}Cardinal version: {}", cardinalArt, version)
+    logger.info("Cardinal version: {}", version)
 
-      val keys = System.getenv().keySet().toArray.sortBy(_.toString)
-      logger.info("{}", keys.mkString(", "))
-    }
+    val keys = System.getenv().keySet().toArray.sortBy(_.toString)
+    logger.info("{}", keys.mkString(", "))
   })
 }
