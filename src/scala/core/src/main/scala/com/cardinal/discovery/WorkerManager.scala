@@ -5,6 +5,7 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpEntity, HttpRequest}
 import akka.http.scaladsl.unmarshalling.sse.EventStreamParser
+import akka.pattern.after
 import akka.stream.{Materializer, RestartSettings}
 import akka.stream.scaladsl.{Keep, RestartSource, Sink, Source}
 import com.cardinal.utils.Commons.{QUERY_WORKER_HEARTBEAT, QUERY_WORKER_PORT}
@@ -13,7 +14,7 @@ import org.slf4j.LoggerFactory
 
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.{ExecutionContextExecutor, Future}
-import scala.concurrent.duration.{Duration, DurationInt, MILLISECONDS}
+import scala.concurrent.duration.{Deadline, Duration, DurationInt, MILLISECONDS}
 import scala.util.{Failure, Success}
 
 class WorkerManager(
@@ -120,51 +121,54 @@ class WorkerManager(
     Rendezvous.select[Pod](key, pods, _.ip)
   }
 
-  private def startHeartBeatingWithQueryWorker(pod: Pod)(implicit system: ActorSystem): Future[Done] = {
-    val ip = pod.ip
-    val req = HttpRequest(uri = QUERY_WORKER_HEARTBEAT, entity = HttpEntity.Empty)
-    logger.info(s"Starting to heartbeat with $ip")
-    @volatile var alreadyAdded = false
+  private def startHeartBeatingWithQueryWorker(pod: Pod)
+                                              (implicit system: ActorSystem, mat: Materializer): Future[Done] = {
+    val ip       = pod.ip
+    val port     = QUERY_WORKER_PORT
+    val uri      = s"http://$ip:$port$QUERY_WORKER_HEARTBEAT"
+    val request  = HttpRequest(uri = uri)
+    @volatile var added = false
+    val deadline = Deadline.now + 1.minute
 
-    val settings =
-      RestartSettings(2.seconds, 2.seconds, 0.0)
-        .withMaxRestarts(30, 1.minute)
-
-    val connectionFlow = Http().outgoingConnection(ip, QUERY_WORKER_PORT)
-
-    val initialConnect = RestartSource.withBackoff(settings) { () =>
-      Source.single(req)
-        .via(connectionFlow)
-        .flatMapConcat(_.entity.dataBytes)
-        .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
-        .map { _ =>
-          if (!alreadyAdded) {
-            readyPods.updateAndGet(_ + pod)
-            alreadyAdded = true
-            logger.info(s"Heartbeat established for $ip")
+    def attemptOnce(): Future[Unit] =
+      Http().singleRequest(request).flatMap { resp =>
+        resp.entity.dataBytes
+          .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
+          .filter(_.data.nonEmpty)
+          .take(1)
+          .runWith(Sink.head)
+          .map { _ =>
+            if (!added) {
+              readyPods.updateAndGet(_ + pod)
+              added = true
+              logger.info(s"Heartbeat established for $ip")
+            }
           }
-        }
-        .take(1)
+      }
+
+    def retryInitial(): Future[Unit] =
+      attemptOnce().recoverWith {
+        case _ if deadline.hasTimeLeft =>
+          after(2.seconds, system.scheduler)(retryInitial())
+      }
+
+    def steadyStream(): Future[Done] =
+      Http().singleRequest(request).flatMap { resp =>
+        resp.entity.dataBytes
+          .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
+          .map(_ => ())
+          .runWith(Sink.ignore)
+      }
+
+    val flow: Future[Done] = retryInitial().flatMap(_ => steadyStream())
+
+    flow.onComplete { _ =>
+      readyPods.updateAndGet(_ - pod)
+      logger.info(s"Heartbeat terminated for $ip, removed from readyPods")
+      // TODO: ask your manager to murder this pod now that it really is gone
     }
 
-    val steadyHeartbeat: Source[Unit, _] =
-      Source.single(req)
-        .via(connectionFlow)
-        .flatMapConcat(_.entity.dataBytes)
-        .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
-        .map(_ => ())
-
-    val pulse = initialConnect.concat(steadyHeartbeat)
-    pulse
-      .watchTermination() { (_, doneFut) =>
-        doneFut.onComplete { _ =>
-          readyPods.updateAndGet(_ - pod)
-          logger.info(s"Heartbeat terminated for $ip, removed from readyPods")
-          // TODO: ask the manager to murder this pod now that it really is gone
-        }
-      }
-      .toMat(Sink.ignore)(Keep.right)
-      .run()
+    flow
   }
 }
 
