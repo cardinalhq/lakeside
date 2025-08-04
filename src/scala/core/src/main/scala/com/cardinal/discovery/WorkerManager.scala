@@ -130,6 +130,8 @@ class WorkerManager(
     @volatile var added = false
     val deadline = Deadline.now + 1.minute
 
+    logger.info(s"Discovered new query worker at $ip, attempting heartbeat")
+
     def attemptOnce(): Future[Unit] =
       Http().singleRequest(request).flatMap { resp =>
         resp.entity.dataBytes
