@@ -5,8 +5,8 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpEntity, HttpRequest}
 import akka.http.scaladsl.unmarshalling.sse.EventStreamParser
-import akka.stream.Materializer
-import akka.stream.scaladsl.{Keep, Sink, Source}
+import akka.stream.{Materializer, RestartSettings}
+import akka.stream.scaladsl.{Keep, RestartSource, Sink, Source}
 import com.cardinal.utils.Commons.{QUERY_WORKER_HEARTBEAT, QUERY_WORKER_PORT}
 import com.typesafe.config.ConfigFactory
 import org.slf4j.LoggerFactory
@@ -61,7 +61,6 @@ class WorkerManager(
       s"Known ready pods: ${readyPods.get().map(_.ip).mkString("[", ", ", "]")}"
     )
   )(ec)
-
 
   system.scheduler.scheduleWithFixedDelay(
     initialDelay = scaleDownWaitTime.minutes,
@@ -123,26 +122,33 @@ class WorkerManager(
 
   private def startHeartBeatingWithQueryWorker(pod: Pod)(implicit system: ActorSystem): Future[Done] = {
     val ip = pod.ip
+    logger.info(s"Starting to heartbeat with $ip")
+    @volatile var alreadyAdded = false
 
-    logger.info(s"Starting to heartbeat with ${pod.ip}")
-    var alreadyAdded = false
+    val restartSettings =
+      RestartSettings(2.seconds, 2.seconds,0.0).withMaxRestarts(30, 1.minute)
 
-    Source
-      .single(HttpRequest(uri = QUERY_WORKER_HEARTBEAT, entity = HttpEntity("")))
-      .via(Http().outgoingConnection(host = ip, port = QUERY_WORKER_PORT))
-      .flatMapConcat(resp => resp.entity.dataBytes)
-      .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
-      .map { _ =>
-        if (!alreadyAdded) {
-          readyPods.updateAndGet(_ + pod)
-          alreadyAdded = true
-          logger.info(s"Heartbeat established for $ip, added to readyPods")
-        }
+    val heartbeatSource: Source[Unit, _] =
+      RestartSource.withBackoff(restartSettings) { () =>
+        Source.single(HttpRequest(uri = QUERY_WORKER_HEARTBEAT, entity = HttpEntity.Empty))
+          .via(Http().outgoingConnection(host = ip, port = QUERY_WORKER_PORT))
+          .flatMapConcat(_.entity.dataBytes)
+          .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
+          .map { _ =>
+            if (!alreadyAdded) {
+              readyPods.updateAndGet(_ + pod)
+              alreadyAdded = true
+              logger.info(s"Heartbeat established for $ip, added to readyPods")
+            }
+          }
       }
-      .watchTermination() { (_, f) =>
-        f.onComplete { _ =>
+
+    heartbeatSource
+      .watchTermination() { (_, termFut) =>
+        termFut.onComplete { _ =>
           readyPods.updateAndGet(_ - pod)
           logger.info(s"Heartbeat terminated for $ip, removed from readyPods")
+          // TODO: ask the manager to murder this pod now that heartbeat never recovered
         }
       }
       .toMat(Sink.ignore)(Keep.right)
