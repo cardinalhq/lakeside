@@ -1,11 +1,8 @@
 package com.cardinal.queryworker
 
-import com.cardinal.utils.Commons.isRunningInKubernetes
 import com.typesafe.config.{Config, ConfigFactory}
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.{Bean, Configuration}
-
-import scala.util.Try
 
 @Configuration
 class QueryWorkerConfiguration {

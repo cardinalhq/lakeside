@@ -89,11 +89,6 @@ object Commons {
 
   val INDEX_FULL_VALUE_DIMENSIONS: List[String] = List(RESOURCE_FILE)
 
-
-  def isRunningInKubernetes: Boolean = {
-    sys.env.contains("KUBERNETES_SERVICE_HOST")
-  }
-
   def pushDownResponseOrdering(pushDownRequest: PushDownRequest): Ordering[Either[DataPoint, SketchInput]] =
     (x: Either[DataPoint, SketchInput], y: Either[DataPoint, SketchInput]) => {
       val xTimestamp = x match {
@@ -111,7 +106,6 @@ object Commons {
         xTimestamp.compare(yTimestamp)
       }
     }
-
 
   def computeFingerprint(fieldName: String, trigram: String): Long = {
     val str = s"$fieldName:$trigram"

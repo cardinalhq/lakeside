@@ -25,18 +25,10 @@ object NLPUtils {
   private val logger = LoggerFactory.getLogger(getClass)
 
   private val regexp: RegexpInterface = try {
-    if (isRunningInKubernetes) {
-      Native.load(
-        Paths.get("/app/libs/lib-trigram.so").toFile.getAbsolutePath,
-        classOf[RegexpInterface]
-      )
-    } else {
-      val path = Paths.get(getClass.getClassLoader.getResource("lib-trigram.so").toURI).toFile.getAbsolutePath
-      Native.load(
-        path,
-        classOf[RegexpInterface]
-      )
-    }
+    Native.load(
+      Paths.get("/app/libs/lib-trigram.so").toFile.getAbsolutePath,
+      classOf[RegexpInterface]
+    )
   } catch {
     case e: Exception =>
       logger.error("Error loading lib", e)
@@ -106,11 +98,11 @@ object NLPUtils {
             Sub = Some((toTrigramQuery(q1, dataset) ++ toTrigramQuery(q2, dataset)).toList)
           )
         )
-      case HasQuery(k)       => toTrigramQuery(k, EXISTS_REGEX)
-      case NotQuery(_)       => None
-      case EqualsQuery(k, v) => mkTrigramQueryConditionalOnDataset(dataset, k, toTrigramValue(v))
-      case RegexQuery(k, v)  => mkTrigramQueryConditionalOnDataset(dataset, k, v)
-      case ContainsQuery(k, v)  => mkTrigramQueryConditionalOnDataset(dataset, k, s".*$v.*")
+      case HasQuery(k)         => toTrigramQuery(k, EXISTS_REGEX)
+      case NotQuery(_)         => None
+      case EqualsQuery(k, v)   => mkTrigramQueryConditionalOnDataset(dataset, k, toTrigramValue(v))
+      case RegexQuery(k, v)    => mkTrigramQueryConditionalOnDataset(dataset, k, v)
+      case ContainsQuery(k, v) => mkTrigramQueryConditionalOnDataset(dataset, k, s".*$v.*")
       case InQuery(k, vs) =>
         Some(
           TrigramQuery(
@@ -123,16 +115,12 @@ object NLPUtils {
     }
   }
 
-
   def toTrigramValue(v: String): String = {
     v
   }
 
   private val INDEXED_DIMENSIONS = DIMENSIONS_TO_INDEX ++ INFRA_DIMENSIONS.toSet
-  private def mkTrigramQueryConditionalOnDataset(
-    dataset: String,
-    k: String,
-    v: String): Option[TrigramQuery] = {
+  private def mkTrigramQueryConditionalOnDataset(dataset: String, k: String, v: String): Option[TrigramQuery] = {
     if (dataset != METRICS && k == NAME) toTrigramQuery(TELEMETRY_TYPE, dataset)
     else if (!INDEXED_DIMENSIONS.contains(k)) {
       toTrigramQuery(k, EXISTS_REGEX)
