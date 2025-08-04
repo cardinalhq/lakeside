@@ -13,17 +13,7 @@ class QueryWorkerConfiguration {
 
   @Bean
   def config(): Config = {
-    val appConfig = ConfigFactory.parseResources("application.conf")
-    // So we can provide some overrides when running the app locally
-    val config = if (!isRunningInKubernetes) {
-      Try(ConfigFactory.parseResources("application-laptop.conf")).toOption
-        .map(localConf => localConf.withFallback(appConfig))
-        .getOrElse(appConfig)
-    } else {
-      logger.info("Running on kubernetes, using discovery config")
-      appConfig
-    }
-
+    val config = ConfigFactory.parseResources("application.conf")
     ConfigFactory.load(config)
   }
 }
