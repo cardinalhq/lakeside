@@ -3,10 +3,12 @@ package com.cardinal.discovery
 import akka.NotUsed
 import akka.stream.scaladsl.{BroadcastHub, Keep, Source}
 import akka.stream.{Materializer, OverflowStrategy}
+import com.cardinal.discovery.ClusterWatcher.getClass
 import io.fabric8.kubernetes.api.model.Service
-import io.fabric8.kubernetes.api.model.discovery.v1.EndpointSlice
+import io.fabric8.kubernetes.api.model.discovery.v1.{EndpointSlice, EndpointSliceList}
+import io.fabric8.kubernetes.client.dsl.internal.OperationContext
 import io.fabric8.kubernetes.client.informers.{ResourceEventHandler, SharedInformerFactory}
-import io.fabric8.kubernetes.client.{ConfigBuilder, KubernetesClient, KubernetesClientBuilder}
+import io.fabric8.kubernetes.client.{ConfigBuilder, KubernetesClient, KubernetesClientBuilder, NamespacedKubernetesClient}
 import org.slf4j.LoggerFactory
 
 import java.util.concurrent.atomic.AtomicReference
@@ -21,17 +23,24 @@ object KubernetesWatcher {
     * @param serviceLabels   label-selector for Services, e.g. Map("app" → "lakerunner")
     * @param namespace       the Kubernetes namespace to watch
     */
-  def startWatching(serviceLabels: Map[String, String], namespace: String = "default")(
+  def startWatching(serviceLabels: Map[String, String], namespace: String)(
     implicit mat: Materializer
   ): Source[ClusterState, NotUsed] = {
+    val logger = org.slf4j.LoggerFactory.getLogger(getClass)
+
+    logger.info(s"Starting Kubernetes watcher for namespace: $namespace with labels: $serviceLabels")
+
     val config = new ConfigBuilder().withNamespace(namespace).build()
-    val client: KubernetesClient = new KubernetesClientBuilder().withConfig(config).build()
-    val informerFactory: SharedInformerFactory = client.informers()
+    val coreClient: KubernetesClient = new KubernetesClientBuilder().withConfig(config).build()
+    val nsClient: NamespacedKubernetesClient = coreClient.adapt(classOf[NamespacedKubernetesClient]).inNamespace(namespace)
+    val namespacedFactory: SharedInformerFactory =
+      nsClient.informers()
+        .inNamespace(namespace)    // ← DEPRECATED, but it’s exactly what you need
 
     val matchingServices = new AtomicReference[Set[String]](Set.empty)
 
     def refreshServices(): Unit = {
-      val svcNames = client
+      val svcNames = nsClient
         .services()
         .inNamespace(namespace)
         .withLabels(serviceLabels.asJava)
@@ -47,13 +56,17 @@ object KubernetesWatcher {
 
     refreshServices()
 
-    informerFactory
-      .sharedIndexInformerFor(classOf[Service], 0)
-      .addEventHandler(new ResourceEventHandler[Service] {
-        override def onAdd(obj: Service): Unit = refreshServices()
-        override def onUpdate(oldObj: Service, newObj: Service): Unit = refreshServices()
-        override def onDelete(obj: Service, b: Boolean): Unit = refreshServices()
-      })
+    nsClient.services()
+      .inNamespace(namespace)
+      .withLabels(serviceLabels.asJava)
+      .inform(
+        new ResourceEventHandler[Service] {
+          override def onAdd(obj: Service): Unit = refreshServices()
+          override def onUpdate(o: Service, n: Service): Unit = refreshServices()
+          override def onDelete(obj: Service, b: Boolean): Unit = refreshServices()
+        },
+        0
+      )
 
     val currentPods = new AtomicReference[Set[Pod]](Set.empty)
     val (queue, source) = Source
@@ -73,7 +86,7 @@ object KubernetesWatcher {
     }
 
     def rebuildPodSet(): Set[Pod] = {
-      val store = informerFactory
+      val store = namespacedFactory
         .getExistingSharedIndexInformer(classOf[EndpointSlice])
         .getStore
 
@@ -113,11 +126,10 @@ object KubernetesWatcher {
       }
     }
 
-    informerFactory
-      .sharedIndexInformerFor(classOf[EndpointSlice], 0)
-      .addEventHandler(handler)
+    val sliceInformer = namespacedFactory.sharedIndexInformerFor(classOf[EndpointSlice], 0)
+    sliceInformer.addEventHandler(handler)
 
-    informerFactory.startAllRegisteredInformers()
+    namespacedFactory.startAllRegisteredInformers()
 
     source
   }

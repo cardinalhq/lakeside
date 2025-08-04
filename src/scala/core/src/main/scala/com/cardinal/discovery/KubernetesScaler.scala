@@ -1,6 +1,6 @@
 package com.cardinal.discovery
 
-import io.fabric8.kubernetes.client.{KubernetesClient, KubernetesClientBuilder}
+import io.fabric8.kubernetes.client.{ConfigBuilder, KubernetesClientBuilder, NamespacedKubernetesClient}
 import org.slf4j.LoggerFactory
 
 import scala.jdk.CollectionConverters._
@@ -8,13 +8,15 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class KubernetesScaler(namespace: String, labels: Map[String, String]) extends ClusterScaler {
   private val logger = LoggerFactory.getLogger(getClass)
-  private val client: KubernetesClient = new KubernetesClientBuilder().build()
+  private val config = new ConfigBuilder().withNamespace(namespace).build()
+  private val coreClient = new KubernetesClientBuilder().withConfig(config).build()
+  private val nsClient = coreClient.adapt(classOf[NamespacedKubernetesClient]).inNamespace(namespace)
   private val lastDesired = new AtomicInteger(0)
   private val labelSelector = labels.asJava
 
   override def scaleTo(desiredReplicas: Int): Unit = {
     try {
-      val deployments = client
+      val deployments = nsClient
         .apps()
         .deployments()
         .inNamespace(namespace)
@@ -30,7 +32,7 @@ class KubernetesScaler(namespace: String, labels: Map[String, String]) extends C
 
       deployments.foreach { d =>
         val name = d.getMetadata.getName
-        client
+        nsClient
           .apps()
           .deployments()
           .inNamespace(namespace)

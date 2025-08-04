@@ -77,6 +77,9 @@ class SegmentCacheManager()(implicit actorSystem: ActorSystem) {
   implicit val mat: akka.stream.Materializer = akka.stream.Materializer(actorSystem)
   private val logger = LoggerFactory.getLogger(getClass)
   private val CACHE_URI = "/api/internal/cacheSegments"
+  locally {
+    SegmentCacheManager.manager
+  }
 
   private val _downloadQueue = StreamUtils
     .blockingQueue[Seq[SegmentInfo]]("downloadQueue", 1024)

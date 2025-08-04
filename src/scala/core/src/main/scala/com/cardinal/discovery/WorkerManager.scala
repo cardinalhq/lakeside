@@ -54,6 +54,16 @@ class WorkerManager(
   }
 
   system.scheduler.scheduleWithFixedDelay(
+    initialDelay = 1.minute,
+    delay        = 1.minute
+  )(() =>
+    logger.info(
+      s"Known ready pods: ${readyPods.get().map(_.ip).mkString("[", ", ", "]")}"
+    )
+  )(ec)
+
+
+  system.scheduler.scheduleWithFixedDelay(
     initialDelay = scaleDownWaitTime.minutes,
     delay = scaleDownWaitTime.minutes
   )(() => enforceBoundsAndMaybeScaleDown())
