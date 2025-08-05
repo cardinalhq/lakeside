@@ -23,4 +23,6 @@ COPY --from=builder snapshot-dependencies/ ./
 COPY --from=builder spring-boot-loader/ ./
 COPY --from=builder application/ ./
 
-CMD ["java", "-javaagent:/app/libs/otel-javaagent.jar", "-XX:+ExitOnOutOfMemoryError", "-XX:+UnlockDiagnosticVMOptions", "-XX:+DebugNonSafepoints", "-Dcom.sun.management.jmxremote", "-Dcom.sun.management.jmxremote.authenticate=false", "-Dcom.sun.management.jmxremote.ssl=false", "-Dcom.sun.management.jmxremote.port=9875", "-Dcom.sun.management.jmxremote.rmi.port=9875", "-Djava.rmi.server.hostname=localhost", "org.springframework.boot.loader.JarLauncher"]
+COPY docker/run.sh /app/run.sh
+
+CMD ["/app/run.sh"]
