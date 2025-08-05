@@ -11,6 +11,4 @@ docker buildx build \
   --pull \
   --push \
   --platform linux/amd64,linux/arm64 \
-  -f Dockerfile.local \
   -t public.ecr.aws/cardinalhq.io/lakerunner/query-worker:latest .
-
