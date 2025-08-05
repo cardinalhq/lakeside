@@ -16,13 +16,13 @@ ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/release
 COPY libs/${TARGETOS}-${TARGETARCH}/lib-trigram.h /app/libs/lib-trigram.h
 COPY libs/${TARGETOS}-${TARGETARCH}/lib-trigram.so /app/libs/lib-trigram.so
 
+COPY docker/run.sh /app/run.sh
+
 RUN chmod -R a+rx /app
 
 COPY --from=builder dependencies/ ./
 COPY --from=builder snapshot-dependencies/ ./
 COPY --from=builder spring-boot-loader/ ./
 COPY --from=builder application/ ./
-
-COPY docker/run.sh /app/run.sh
 
 CMD ["/app/run.sh"]
