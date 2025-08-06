@@ -35,7 +35,6 @@ class DatabaseApiKeyAuth extends ApiKeyAuth {
           case Some(customerId) => provide(customerId)
           case None             => complete(HttpResponse(StatusCodes.Unauthorized, entity = "Invalid API key"))
         }
-
       case None =>
         complete(HttpResponse(StatusCodes.Unauthorized, entity = "Missing or invalid API key"))
     }
