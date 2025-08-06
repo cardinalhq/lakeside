@@ -19,15 +19,16 @@ package com.cardinal.discovery
 import com.cardinal.utils.EnvUtils
 
 case class KubernetesClusterConfig(
-                             serviceLabels: Map[String, String],
-                             namespace: String
-                           )
+  serviceLabels: Map[String, String],
+  namespace: String
+)
+
 object KubernetesClusterConfig {
   def load(): KubernetesClusterConfig = {
     val rawLabels = EnvUtils.mustFirstEnv(Seq("QUERY_WORKER_LABEL_SELECTOR", "WORKER_POD_LABEL_SELECTOR"))
     val labels = EnvUtils.parseLabels(rawLabels)
 
-    val ns = EnvUtils.mustFirstEnv(Seq("QUERY_WORKER_POD_NAMESPACE", "WORKER_POD_NAMESPACE", "POD_NAMESPACE"))
+    val ns = EnvUtils.mustFirstEnv(Seq("QUERY_WORKER_NAMESPACE", "WORKER_POD_NAMESPACE", "POD_NAMESPACE"))
     KubernetesClusterConfig(labels, ns)
   }
 }
