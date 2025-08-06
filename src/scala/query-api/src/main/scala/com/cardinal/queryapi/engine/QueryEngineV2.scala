@@ -735,7 +735,7 @@ class QueryEngineV2(
         .map { dateInt =>
           val segmentsResult = Set.newBuilder[SegmentInfo]
           baseExpressions.foreach { baseExpr =>
-            val frequencyToUse = if (baseExpr.dataset == METRICS) request.frequency else 10000
+            val frequencyToUse = request.frequency
             if (baseExpr.dataset == METRICS) {
               val startTs = request.startTs
               val endTs = request.endTs
@@ -805,7 +805,8 @@ class QueryEngineV2(
                     tq = tq,
                     fingerprints = fingerprints,
                     startTs = request.startTs,
-                    endTs = request.endTs
+                    endTs = request.endTs,
+                    frequencyToUse = frequencyToUse
                   )
                 }
               }
@@ -831,6 +832,7 @@ class QueryEngineV2(
     fingerprints: Set[Long],
     startTs: Long,
     endTs: Long,
+    frequencyToUse: Long
   ): List[SegmentInfo] = {
     var connection: Connection = null
     var statement: PreparedStatement = null
@@ -858,6 +860,7 @@ class QueryEngineV2(
           |  AND s.fingerprints && ?::BIGINT[]
           |  AND t.fp           = ANY(?::BIGINT[])
           |""".stripMargin
+      logger.info("Issuing query to fetch segments: " + query)
       statement = connection.prepareStatement(query)
 
       logger.info(s"Query = $dateInt, customerId = $customerId, fingerprints = ${fingerprints.mkString(", ")}")
@@ -898,7 +901,7 @@ class QueryEngineV2(
                     s"No collectorId found while processing storage profile ${storageProfile.storageProfileId}"
                   )
                 ),
-                frequency = TEN_SECONDS_MILLIS,
+                frequency = frequencyToUse,
               )
             }
           )

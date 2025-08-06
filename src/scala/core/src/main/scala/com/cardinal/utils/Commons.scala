@@ -221,7 +221,7 @@ object Commons {
         baseExpr = baseExpr,
         startTs = startTs,
         endTs = endTs,
-        stepInMillis = 10000,
+        stepInMillis = pushDownRequest.segmentRequests.head.stepInMillis,
         isTagQuery = pushDownRequest.isTagQuery,
         tagDataType = pushDownRequest.tagDataType,
         globalAgg = baseExpr.chartOpts.map(_.aggregation),
