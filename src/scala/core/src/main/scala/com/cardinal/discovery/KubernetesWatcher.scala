@@ -49,9 +49,7 @@ object KubernetesWatcher {
     val config = new ConfigBuilder().withNamespace(namespace).build()
     val coreClient: KubernetesClient = new KubernetesClientBuilder().withConfig(config).build()
     val nsClient: NamespacedKubernetesClient = coreClient.adapt(classOf[NamespacedKubernetesClient]).inNamespace(namespace)
-    val namespacedFactory: SharedInformerFactory =
-      nsClient.informers()
-        .inNamespace(namespace)    // ← DEPRECATED, but it’s exactly what you need
+    val namespacedFactory: SharedInformerFactory = nsClient.informers().inNamespace(namespace)
 
     val matchingServices = new AtomicReference[Set[String]](Set.empty)
 
