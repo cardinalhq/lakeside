@@ -1,0 +1,48 @@
+header:
+  license:
+    spdx-id: AGPL-3.0-only
+    copyright-owner: CardinalHQ, Inc
+    copyright-year: 2025
+
+  paths-ignore:
+    - 'bin'
+    - 'buildtime'
+    - '**/*.md'
+    - 'NOTICE'
+    - 'LICENSE'
+    - .gitignore
+    - .dockerignore
+    - .github
+    - .licenserc.yaml
+    - '**/*.yaml'
+    - '**/*.yml'
+    - '**/*.json'
+    - '**/*.mermaid'
+    - go.sum
+    - go.mod
+    - go.work
+    - go.work.sum
+    - '**/testdata/**'
+    - .idea
+    - '**/*.sql.go'
+    - '**/*.sql'
+    - pkg/*db/batch.go
+    - pkg/*db/db.go
+    - pkg/*db/models.go
+    - pkg/*db/querier.go
+    - pkg/*db/copyfrom.go
+    - internal/configdb/batch.go
+    - internal/configdb/db.go
+    - internal/configdb/models.go
+    - internal/configdb/querier.go
+    - internal/configdb/copyfrom.go
+    - src/scala/.scalafmt.conf
+    - src/scala/gradlew
+    - '**/lib-trigram.h'
+    - '**/*.conf'
+    - '**/*.bat'
+    - '**/*.properties'
+    - '**/*.txt'
+    - 'src/scala/core/src/main/java/com/cardinal/promql'
+    - '**/*.g4'
+  comment: on-failure
