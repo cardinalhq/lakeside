@@ -166,7 +166,7 @@ class WorkerManager(
 
     def retryInitial(): Future[Unit] =
       attemptOnce().recoverWith {
-        case _ if deadline.hasTimeLeft =>
+        case _ if deadline.hasTimeLeft() =>
           after(2.seconds, system.scheduler)(retryInitial())
       }
 
