@@ -38,5 +38,6 @@ out/
 ### IDEs
 .vscode/
 .metals/
+.scala-build
 
 idb/
