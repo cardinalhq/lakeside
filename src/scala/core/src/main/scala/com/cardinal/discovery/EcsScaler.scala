@@ -21,6 +21,7 @@ import software.amazon.awssdk.services.ecs.model.{UpdateServiceRequest, Describe
 import org.slf4j.LoggerFactory
 
 import java.util.concurrent.atomic.AtomicInteger
+import scala.jdk.CollectionConverters._
 
 /**
  * A WorkerScaler backed by AWS ECS.
@@ -28,7 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * @param clusterName   the ECS cluster name where your service is running
  * @param serviceName   the ECS service name to scale
  */
-class EcsScaler(clusterName: String, serviceName: String) extends ClusterScaler {
+class EcsScaler(clusterName: String, serviceName: String) extends ClusterScaler with ScalingStateProvider {
   private val logger = LoggerFactory.getLogger(getClass)
 
   private val ecs: EcsClient = EcsClient.builder().build()
@@ -49,6 +50,38 @@ class EcsScaler(clusterName: String, serviceName: String) extends ClusterScaler 
     } catch {
       case e: Exception =>
         logger.error(s"[ECS] Error scaling service '$serviceName' to $desiredReplicas", e)
+    }
+  }
+
+  override def getCurrentDesiredReplicas(): Int = {
+    try {
+      val request = DescribeServicesRequest.builder()
+        .cluster(clusterName)
+        .services(serviceName)
+        .build()
+
+      val response = ecs.describeServices(request)
+      response.services().asScala.headOption
+        .map(_.desiredCount().intValue())
+        .getOrElse(0)
+    } catch {
+      case _: Exception => 0
+    }
+  }
+
+  override def getCurrentPodCount(): Int = {
+    try {
+      val request = DescribeServicesRequest.builder()
+        .cluster(clusterName)
+        .services(serviceName)
+        .build()
+
+      val response = ecs.describeServices(request)
+      response.services().asScala.headOption
+        .map(_.runningCount().intValue())
+        .getOrElse(0)
+    } catch {
+      case _: Exception => 0
     }
   }
 }

@@ -90,6 +90,13 @@ object Commons {
   val QUERY_WORKER_CLUSTER = "QUERY_WORKER_CLUSTER"
   val QUERY_WORKER_PORT = 7101
   val QUERY_WORKER_HEARTBEAT = "/api/internal/heartbeat"
+  val WORKER_HEARTBEAT_ENDPOINT = "/api/internal/worker/heartbeat"
+
+  val MIN_WORKERS_FOR_QUERY: Int = sys.env.getOrElse("MIN_WORKERS_FOR_QUERY", "5").toInt
+  val MIN_WORKERS_PERCENT: Int = sys.env.getOrElse("MIN_WORKERS_PERCENT", "70").toInt
+  val MAX_WORKER_WAIT_SECONDS: Int = sys.env.getOrElse("MAX_WORKER_WAIT_SECONDS", "30").toInt
+  val WORKER_HEARTBEAT_INTERVAL_SECONDS: Int = sys.env.getOrElse("WORKER_HEARTBEAT_INTERVAL_SECONDS", "30").toInt
+  val WORKER_HEARTBEAT_TIMEOUT_SECONDS: Int = sys.env.getOrElse("WORKER_HEARTBEAT_TIMEOUT_SECONDS", "90").toInt
 
   val DESCENDING = "DESC"
 

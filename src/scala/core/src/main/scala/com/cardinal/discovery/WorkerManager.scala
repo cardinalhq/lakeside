@@ -24,7 +24,8 @@ import akka.http.scaladsl.unmarshalling.sse.EventStreamParser
 import akka.pattern.after
 import akka.stream.{Materializer, RestartSettings}
 import akka.stream.scaladsl.{Keep, RestartSource, Sink, Source}
-import com.cardinal.utils.Commons.{QUERY_WORKER_HEARTBEAT, QUERY_WORKER_PORT}
+import com.cardinal.model.ScalingStatusMessage
+import com.cardinal.utils.Commons._
 import com.typesafe.config.ConfigFactory
 import org.slf4j.LoggerFactory
 
@@ -37,7 +38,9 @@ class WorkerManager(
   watcher: Source[ClusterState, NotUsed],
   minWorkers: Int,
   maxWorkers: Int,
-  scaler: ClusterScaler
+  scaler: ClusterScaler,
+  getHeartbeatingWorkers: () => Int,
+  getHeartbeatingWorkerFor: String => Option[Pod]
 )(implicit system: ActorSystem, mat: Materializer) {
   private implicit val ec: ExecutionContextExecutor = system.dispatcher
 
@@ -50,6 +53,11 @@ class WorkerManager(
   private val cfg = ConfigFactory.load()
   private val scaleUpWaitTime = cfg.getInt("scale-up.wait.time.minutes")
   private val scaleDownWaitTime = cfg.getInt("scale-down.wait.time.minutes")
+
+  private val scalingMetrics = scaler match {
+    case s: ClusterScaler with ScalingStateProvider => Some(new ScalingMetrics(s, getHeartbeatingWorkers))
+    case _ => None
+  }
 
   watcher.runForeach { state =>
     currentPods.set(state.current)
@@ -102,7 +110,7 @@ class WorkerManager(
   }
 
   def isScaledUp: Boolean = {
-    val sz = podCount
+    val sz = getHeartbeatingWorkers()
     sz >= maxWorkers
   }
 
@@ -133,8 +141,38 @@ class WorkerManager(
   def podCount: Int = readyPods.get().size
 
   def getWorkerFor(key: String): Option[Pod] = {
-    val pods = readyPods.get().toSeq
-    Rendezvous.select[Pod](key, pods, _.ip)
+    getHeartbeatingWorkerFor(key)
+  }
+
+  def waitForSufficientWorkers(): Source[ScalingStatusMessage, NotUsed] = {
+    val minWorkersAbsolute = math.min(MIN_WORKERS_FOR_QUERY, maxWorkers)
+    val desiredWorkers = scalingMetrics.map(_.getDesiredWorkers).getOrElse(maxWorkers)
+    val minWorkersPercent = math.ceil(desiredWorkers * MIN_WORKERS_PERCENT / 100.0).toInt
+    val effectiveMinWorkers = math.max(1, math.max(minWorkersAbsolute, minWorkersPercent))
+
+    Source.tick(1.second, 1.second, NotUsed)
+      .scan(0)((acc, _) => acc + 1)
+      .takeWhile { secondsWaited =>
+        val readyWorkers = getHeartbeatingWorkers()
+        val shouldContinueWaiting = readyWorkers < effectiveMinWorkers &&
+                                   secondsWaited < MAX_WORKER_WAIT_SECONDS
+
+        if (secondsWaited % 5 == 0) {
+          logger.info(s"Waiting for workers: ${readyWorkers}/${effectiveMinWorkers} ready, ${secondsWaited}s elapsed")
+        }
+
+        shouldContinueWaiting
+      }
+      .map { secondsWaited =>
+        val readyWorkers = getHeartbeatingWorkers()
+        if (readyWorkers >= effectiveMinWorkers) {
+          ScalingStatusMessage(s"Ready: $readyWorkers workers available")
+        } else {
+          ScalingStatusMessage(s"Proceeding with $readyWorkers workers after ${MAX_WORKER_WAIT_SECONDS}s timeout")
+        }
+      }
+      .take(1)
+      .mapMaterializedValue(_ => NotUsed)
   }
 
   private def startHeartBeatingWithQueryWorker(pod: Pod)
@@ -194,6 +232,13 @@ object WorkerManager {
   def apply()(implicit system: ActorSystem, mat: Materializer): WorkerManager = {
     val minWorkers = sys.env.getOrElse("NUM_MIN_QUERY_WORKERS", "2").toInt
     val maxWorkers = sys.env.getOrElse("NUM_MAX_QUERY_WORKERS", "30").toInt
-    new WorkerManager(ClusterWatcher.watch(), minWorkers, maxWorkers, ClusterScaler.load())
+    new WorkerManager(
+      ClusterWatcher.watch(),
+      minWorkers,
+      maxWorkers,
+      ClusterScaler.load(),
+      () => 0, // Default implementation, will be overridden in query-api
+      _ => None // Default implementation, will be overridden in query-api
+    )
   }
 }

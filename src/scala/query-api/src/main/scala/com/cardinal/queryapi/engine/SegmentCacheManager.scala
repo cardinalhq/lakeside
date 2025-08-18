@@ -23,9 +23,9 @@ import akka.http.scaladsl.model._
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import com.cardinal.datastructures.EMA
-import com.cardinal.discovery.{Pod, WorkerManager}
+import com.cardinal.discovery.{ClusterScaler, ClusterWatcher, Pod, WorkerManager}
 import com.cardinal.model.query.common.SegmentInfo
-import com.cardinal.model.{DownloadSegmentRequest, Heartbeat, SegmentRequest}
+import com.cardinal.model.{DownloadSegmentRequest, Heartbeat, ScalingStatusMessage, SegmentRequest}
 import com.cardinal.queryapi.engine.SegmentCacheManager.{getWorkerFor, manager, readyPodCount, timeOfLastQuery, toSegmentPathOnS3}
 import com.cardinal.utils.Commons._
 import com.cardinal.utils.StreamUtils
@@ -48,17 +48,23 @@ object SegmentCacheManager {
   private val client = io.kubernetes.client.util.Config.defaultClient
   Configuration.setDefaultApiClient(client)
 
-  private val manager = WorkerManager.apply()
+  private val heartbeatReceiver = new WorkerHeartbeatReceiver()
+  private val manager = {
+    val minWorkers = sys.env.getOrElse("NUM_MIN_QUERY_WORKERS", "2").toInt
+    val maxWorkers = sys.env.getOrElse("NUM_MAX_QUERY_WORKERS", "30").toInt
+    new WorkerManager(
+      ClusterWatcher.watch(),
+      minWorkers,
+      maxWorkers,
+      ClusterScaler.load(),
+      () => heartbeatReceiver.getReadyWorkerCount,
+      heartbeatReceiver.getWorkerFor
+    )
+  }
 
-  def waitUntilScaled(): Source[Heartbeat, NotUsed] = {
-    Source
-      .tick(0.seconds, 3.seconds, NotUsed)
-      .takeWhile(_ => !manager.isScaledUp)
-      .wireTap(_ => manager.recordQuery())
-      .map { _ =>
-        Heartbeat(`type` = "waiting_scale_up")
-      }
-      .mapMaterializedValue(_ => NotUsed)
+  def waitUntilScaled(): Source[ScalingStatusMessage, NotUsed] = {
+    manager.recordQuery()
+    manager.waitForSufficientWorkers()
   }
 
   def getWorkerFor(segmentId: String): Option[Pod] = manager.getWorkerFor(segmentId)

@@ -36,3 +36,18 @@ case class GenericSSEStringPayload(id: String = "_", `type`: String = "data", me
   override def toChunkStreamPart: ChunkStreamPart = ChunkStreamPart("data: " + s"{\"message\": $message}" + TwoLineSeparator)
 }
 
+case class WorkerHeartbeat(
+  workerIp: String,
+  port: Int,
+  timestamp: Long,
+  status: String = "healthy"
+) extends JsonSupport
+
+case class WorkerStatus(
+  pod: com.cardinal.discovery.Pod,
+  lastSeen: Long,
+  healthy: Boolean
+)
+
+case class ScalingStatusMessage(message: String, `type`: String = "scaling") extends SSEMessage
+
