@@ -53,6 +53,8 @@ import scala.concurrent.duration.DurationInt
 @DependsOn(Array("storageProfileCache"))
 class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2, workerHeartbeatReceiver: WorkerHeartbeatReceiver) extends AuthDirectives(actorSystem) {
   private val logger = LoggerFactory.getLogger(getClass)
+  
+  SegmentCacheManager.setHeartbeatReceiver(workerHeartbeatReceiver)
 
   private def scopeTags: Route = {
     path("api" / "v1" / "scopeTags") {

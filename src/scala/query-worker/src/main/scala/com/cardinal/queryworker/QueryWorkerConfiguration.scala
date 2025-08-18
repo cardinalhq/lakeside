@@ -25,11 +25,8 @@ import javax.annotation.PostConstruct
 import javax.inject.Inject
 
 @Configuration
-class QueryWorkerConfiguration {
+class QueryWorkerConfiguration @Inject()(private val actorSystem: ActorSystem) {
   private val logger = LoggerFactory.getLogger(getClass)
-
-  @Inject
-  private var actorSystem: ActorSystem = _
 
   @PostConstruct
   def startHeartbeat(): Unit = {

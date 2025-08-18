@@ -24,12 +24,13 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
 import java.util.concurrent.ConcurrentHashMap
+import javax.inject.Inject
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters._
 
 @Component
-class WorkerHeartbeatReceiver(implicit system: ActorSystem) {
+class WorkerHeartbeatReceiver @Inject()(implicit system: ActorSystem) {
   private implicit val ec: ExecutionContext = system.dispatcher
   private val logger = LoggerFactory.getLogger(getClass)
 

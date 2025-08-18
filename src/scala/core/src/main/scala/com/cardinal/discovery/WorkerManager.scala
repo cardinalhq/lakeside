@@ -145,30 +145,43 @@ class WorkerManager(
   }
 
   def waitForSufficientWorkers(): Source[ScalingStatusMessage, NotUsed] = {
+    val readyWorkers = getHeartbeatingWorkers()
+    
+    // If using default implementation (returns 0), don't wait
+    if (readyWorkers == 0 && getHeartbeatingWorkers == (() => 0)) {
+      logger.warn("Using default WorkerManager implementation - skipping worker wait")
+      return Source.single(ScalingStatusMessage("Skipping worker wait - using legacy implementation"))
+    }
+    
     val minWorkersAbsolute = math.min(MIN_WORKERS_FOR_QUERY, maxWorkers)
     val desiredWorkers = scalingMetrics.map(_.getDesiredWorkers).getOrElse(maxWorkers)
     val minWorkersPercent = math.ceil(desiredWorkers * MIN_WORKERS_PERCENT / 100.0).toInt
     val effectiveMinWorkers = math.max(1, math.max(minWorkersAbsolute, minWorkersPercent))
 
+    // If we already have enough workers, return immediately
+    if (readyWorkers >= effectiveMinWorkers) {
+      return Source.single(ScalingStatusMessage(s"Ready: $readyWorkers workers available"))
+    }
+
     Source.tick(1.second, 1.second, NotUsed)
       .scan(0)((acc, _) => acc + 1)
       .takeWhile { secondsWaited =>
-        val readyWorkers = getHeartbeatingWorkers()
-        val shouldContinueWaiting = readyWorkers < effectiveMinWorkers &&
+        val currentWorkers = getHeartbeatingWorkers()
+        val shouldContinueWaiting = currentWorkers < effectiveMinWorkers &&
                                    secondsWaited < MAX_WORKER_WAIT_SECONDS
 
         if (secondsWaited % 5 == 0) {
-          logger.info(s"Waiting for workers: ${readyWorkers}/${effectiveMinWorkers} ready, ${secondsWaited}s elapsed")
+          logger.info(s"Waiting for workers: ${currentWorkers}/${effectiveMinWorkers} ready, ${secondsWaited}s elapsed")
         }
 
         shouldContinueWaiting
       }
       .map { secondsWaited =>
-        val readyWorkers = getHeartbeatingWorkers()
-        if (readyWorkers >= effectiveMinWorkers) {
-          ScalingStatusMessage(s"Ready: $readyWorkers workers available")
+        val currentWorkers = getHeartbeatingWorkers()
+        if (currentWorkers >= effectiveMinWorkers) {
+          ScalingStatusMessage(s"Ready: $currentWorkers workers available")
         } else {
-          ScalingStatusMessage(s"Proceeding with $readyWorkers workers after ${MAX_WORKER_WAIT_SECONDS}s timeout")
+          ScalingStatusMessage(s"Proceeding with $currentWorkers workers after ${MAX_WORKER_WAIT_SECONDS}s timeout")
         }
       }
       .take(1)
