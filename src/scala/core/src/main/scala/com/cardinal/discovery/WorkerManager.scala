@@ -56,10 +56,9 @@ class WorkerManager(
 
     state.added.foreach { pod =>
       startHeartBeatingWithQueryWorker(pod).onComplete {
-        case Success(_) =>
-          readyPods.updateAndGet(_ + pod)
         case Failure(ex) =>
-          system.log.warning(s"Health-check failed for $pod: $ex")
+          logger.warn(s"Health-check failed for $pod: $ex")
+        case _ => ()
       }
     }
 
