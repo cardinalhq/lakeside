@@ -48,7 +48,12 @@ class WorkerHeartbeatReceiver @Inject()(implicit system: ActorSystem) {
       healthy = heartbeat.status == "healthy"
     )
 
-    val wasNew = activeWorkers.put(heartbeat.workerIp, workerStatus) == null
+    val previous = activeWorkers.putIfAbsent(heartbeat.workerIp, workerStatus)
+    val wasNew = previous == null
+    if (!wasNew) {
+      // Update the status for existing worker to ensure latest heartbeat is stored
+      activeWorkers.put(heartbeat.workerIp, workerStatus)
+    }
     if (wasNew) {
       logger.info(s"New worker registered: ${heartbeat.workerIp}")
     }
