@@ -1,0 +1,103 @@
+name: Promote Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source-tag:
+        type: string
+        required: true
+        description: "Source Docker tag to promote"
+      target-tag:
+        type: string
+        required: true
+        description: "Target Docker tag to promote to"
+      source-environment:
+        type: choice
+        required: true
+        description: "Source environment"
+        options:
+          - dev
+          - test
+          - prod
+      target-environment:
+        type: choice
+        required: true
+        description: "Target environment"
+        options:
+          - dev
+          - test
+          - prod
+
+jobs:
+  promote-images:
+    runs-on:
+      group: larger-runners
+    environment: ${{ github.event.inputs.target-environment }}
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          audience: sts.amazonaws.com
+          role-to-assume: arn:aws:iam::${{ secrets.ECR_ACCOUNT_ID }}:role/${{ secrets.ECR_ROLE_NAME }}
+          aws-region: ${{ secrets.ECR_REGISTRY_REGION }}
+          role-session-name: GitHubActions
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote query-api and query-worker together
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com
+          SOURCE_TAG: ${{ github.event.inputs.source-tag }}
+          TARGET_TAG: ${{ github.event.inputs.target-tag }}
+        run: |
+          echo "Promoting both query services from $SOURCE_TAG to $TARGET_TAG with shared fate"
+          echo "Source environment: ${{ github.event.inputs.source-environment }}"
+          echo "Target environment: ${{ github.event.inputs.target-environment }}"
+          
+          # Verify source images exist before promoting
+          echo "Verifying source images exist..."
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$SOURCE_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$SOURCE_TAG
+          echo "✓ Source images verified"
+          
+          # Promote query-api using buildx imagetools (faster than pull/tag/push)
+          echo "Promoting query-api..."
+          docker buildx imagetools create \
+            --tag $ECR_REGISTRY/lakeside-query-api:$TARGET_TAG \
+            $ECR_REGISTRY/lakeside-query-api:$SOURCE_TAG
+          echo "✓ query-api promoted"
+          
+          # Promote query-worker using buildx imagetools
+          echo "Promoting query-worker..."
+          docker buildx imagetools create \
+            --tag $ECR_REGISTRY/lakeside-query-worker:$TARGET_TAG \
+            $ECR_REGISTRY/lakeside-query-worker:$SOURCE_TAG
+          echo "✓ query-worker promoted"
+
+      - name: Verify both promotions
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com
+          TARGET_TAG: ${{ github.event.inputs.target-tag }}
+        run: |
+          echo "Verifying both services were promoted successfully with shared version: $TARGET_TAG"
+          
+          # Verify query-api
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$TARGET_TAG
+          echo "✓ query-api:$TARGET_TAG verified"
+          
+          # Verify query-worker
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$TARGET_TAG
+          echo "✓ query-worker:$TARGET_TAG verified"
+          
+          echo "🎉 Both query services promoted successfully with shared fate!"
+          echo "From: ${{ github.event.inputs.source-tag }} (${{ github.event.inputs.source-environment }})"
+          echo "To: $TARGET_TAG (${{ github.event.inputs.target-environment }})"
