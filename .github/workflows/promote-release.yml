@@ -65,22 +65,22 @@ jobs:
           
           # Verify RC images exist before promoting
           echo "Verifying RC images exist..."
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RC_TAG
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RC_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakerunner/query-api:$RC_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakerunner/query-worker:$RC_TAG
           echo "RC images verified"
           
           # Promote query-api RC to release
           echo "Promoting query-api RC to release..."
           docker buildx imagetools create \
-            --tag $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG \
-            $ECR_REGISTRY/lakeside-query-api:$RC_TAG
+            --tag $ECR_REGISTRY/lakerunner/query-api:$RELEASE_TAG \
+            $ECR_REGISTRY/lakerunner/query-api:$RC_TAG
           echo "query-api promoted to release"
           
           # Promote query-worker RC to release
           echo "Promoting query-worker RC to release..."
           docker buildx imagetools create \
-            --tag $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG \
-            $ECR_REGISTRY/lakeside-query-worker:$RC_TAG
+            --tag $ECR_REGISTRY/lakerunner/query-worker:$RELEASE_TAG \
+            $ECR_REGISTRY/lakerunner/query-worker:$RC_TAG
           echo "query-worker promoted to release"
 
       - name: Verify release promotion
@@ -91,11 +91,11 @@ jobs:
           echo "Verifying both services were promoted successfully to release: $RELEASE_TAG"
           
           # Verify query-api release
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakerunner/query-api:$RELEASE_TAG
           echo "query-api:$RELEASE_TAG verified"
           
           # Verify query-worker release
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakerunner/query-worker:$RELEASE_TAG
           echo "query-worker:$RELEASE_TAG verified"
           
           echo "Both query services promoted from RC to release with shared fate!"
@@ -128,18 +128,18 @@ jobs:
           $(git log --pretty=format:"- %s" $LAST_RELEASE..HEAD)
 
           ## Docker Images
-          - \`lakeside-query-api:${{ github.event.inputs.release-tag }}\`
-          - \`lakeside-query-worker:${{ github.event.inputs.release-tag }}\`"
+          - \`lakerunner/query-api:${{ github.event.inputs.release-tag }}\`
+          - \`lakerunner/query-worker:${{ github.event.inputs.release-tag }}\`"
           else
             RELEASE_NOTES="## Query Services Release ${{ github.event.inputs.release-tag }}
           
           Promoted from RC: ${{ github.event.inputs.rc-tag }}
 
-          This release includes both lakeside-query-api and lakeside-query-worker images with shared fate.
+          This release includes both lakerunner/query-api and lakerunner/query-worker images with shared fate.
 
           ## Docker Images
-          - \`lakeside-query-api:${{ github.event.inputs.release-tag }}\`
-          - \`lakeside-query-worker:${{ github.event.inputs.release-tag }}\`"
+          - \`lakerunner/query-api:${{ github.event.inputs.release-tag }}\`
+          - \`lakerunner/query-worker:${{ github.event.inputs.release-tag }}\`"
           fi
           
           # Create the release

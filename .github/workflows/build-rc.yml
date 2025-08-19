@@ -162,7 +162,7 @@ jobs:
           build-args: |
             APP_VERSION=${{ needs.env-setup.outputs.release-tag }}
           tags: |
-            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakeside-query-api:${{ needs.env-setup.outputs.release-tag }}
+            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakerunner/query-api:${{ needs.env-setup.outputs.release-tag }}
 
       - name: Build and push query-worker image
         uses: docker/build-push-action@v6
@@ -174,7 +174,7 @@ jobs:
           build-args: |
             APP_VERSION=${{ needs.env-setup.outputs.release-tag }}
           tags: |
-            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakeside-query-worker:${{ needs.env-setup.outputs.release-tag }}
+            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakerunner/query-worker:${{ needs.env-setup.outputs.release-tag }}
 
       - name: Verify both images pushed successfully
         env:
@@ -184,11 +184,11 @@ jobs:
           echo "Verifying both images were pushed with shared version tag: $RELEASE_TAG"
 
           # Verify query-api image
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakerunner/query-api:$RELEASE_TAG
           echo "query-api:$RELEASE_TAG verified"
 
           # Verify query-worker image
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakerunner/query-worker:$RELEASE_TAG
           echo "query-worker:$RELEASE_TAG verified"
 
           echo "Both query services built and pushed successfully with shared fate!"
