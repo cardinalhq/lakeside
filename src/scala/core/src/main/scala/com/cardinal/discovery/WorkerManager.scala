@@ -40,7 +40,8 @@ class WorkerManager(
   maxWorkers: Int,
   scaler: ClusterScaler,
   getHeartbeatingWorkers: () => Int,
-  getHeartbeatingWorkerFor: String => Option[Pod]
+  getHeartbeatingWorkerFor: String => Option[Pod],
+  isLegacyMode: Boolean = false
 )(implicit system: ActorSystem, mat: Materializer) {
   private implicit val ec: ExecutionContextExecutor = system.dispatcher
 
@@ -147,9 +148,9 @@ class WorkerManager(
   def waitForSufficientWorkers(): Source[ScalingStatusMessage, NotUsed] = {
     val readyWorkers = getHeartbeatingWorkers()
     
-    // If using default implementation (returns 0), don't wait
-    if (readyWorkers == 0 && getHeartbeatingWorkers == (() => 0)) {
-      logger.warn("Using default WorkerManager implementation - skipping worker wait")
+    // If using legacy mode, don't wait for heartbeating workers
+    if (isLegacyMode) {
+      logger.warn("Using legacy WorkerManager implementation - skipping worker wait")
       return Source.single(ScalingStatusMessage("Skipping worker wait - using legacy implementation"))
     }
     
@@ -250,8 +251,9 @@ object WorkerManager {
       minWorkers,
       maxWorkers,
       ClusterScaler.load(),
-      () => 0, // Default implementation, will be overridden in query-api
-      _ => None // Default implementation, will be overridden in query-api
+      () => 0, // Default implementation
+      _ => None, // Default implementation
+      isLegacyMode = true // Mark as legacy mode
     )
   }
 }

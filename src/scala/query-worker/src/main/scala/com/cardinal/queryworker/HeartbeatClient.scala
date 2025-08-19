@@ -96,7 +96,9 @@ class HeartbeatClient(implicit system: ActorSystem) {
         .map(_.getHostAddress)
         .getOrElse(InetAddress.getLocalHost.getHostAddress)
     } catch {
-      case _: Exception => "unknown"
+      case ex: Exception =>
+        logger.warn(s"Failed to determine local IP address: ${ex.getMessage}")
+        "unknown"
     }
   }
 }

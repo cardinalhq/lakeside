@@ -48,17 +48,16 @@ object SegmentCacheManager {
   private val client = io.kubernetes.client.util.Config.defaultClient
   Configuration.setDefaultApiClient(client)
 
-  @volatile private var _heartbeatReceiver: WorkerHeartbeatReceiver = _
+  @volatile private var _heartbeatReceiver: Option[WorkerHeartbeatReceiver] = None
   
   def setHeartbeatReceiver(receiver: WorkerHeartbeatReceiver): Unit = {
-    _heartbeatReceiver = receiver
+    _heartbeatReceiver = Some(receiver)
   }
   
   def heartbeatReceiver: WorkerHeartbeatReceiver = {
-    if (_heartbeatReceiver == null) {
+    _heartbeatReceiver.getOrElse(
       throw new IllegalStateException("WorkerHeartbeatReceiver not initialized")
-    }
-    _heartbeatReceiver
+    )
   }
   private lazy val manager = {
     val minWorkers = sys.env.getOrElse("NUM_MIN_QUERY_WORKERS", "2").toInt
@@ -69,7 +68,8 @@ object SegmentCacheManager {
       maxWorkers,
       ClusterScaler.load(),
       () => heartbeatReceiver.getReadyWorkerCount,
-      heartbeatReceiver.getWorkerFor
+      heartbeatReceiver.getWorkerFor,
+      isLegacyMode = false // Use new heartbeat mode
     )
   }
 

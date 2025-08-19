@@ -22,10 +22,9 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.{Bean, Configuration}
 
 import javax.annotation.PostConstruct
-import javax.inject.Inject
 
 @Configuration
-class QueryWorkerConfiguration @Inject()(private val actorSystem: ActorSystem) {
+class QueryWorkerConfiguration(private val actorSystem: ActorSystem) {
   private val logger = LoggerFactory.getLogger(getClass)
 
   @PostConstruct
