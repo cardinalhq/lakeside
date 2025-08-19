@@ -67,23 +67,21 @@ jobs:
           echo "Verifying RC images exist..."
           docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RC_TAG
           docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RC_TAG
-          echo "✓ RC images verified"
+          echo "RC images verified"
           
           # Promote query-api RC to release
           echo "Promoting query-api RC to release..."
           docker buildx imagetools create \
             --tag $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG \
-            --tag $ECR_REGISTRY/lakeside-query-api:latest \
             $ECR_REGISTRY/lakeside-query-api:$RC_TAG
-          echo "✓ query-api promoted to release"
+          echo "query-api promoted to release"
           
           # Promote query-worker RC to release
           echo "Promoting query-worker RC to release..."
           docker buildx imagetools create \
             --tag $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG \
-            --tag $ECR_REGISTRY/lakeside-query-worker:latest \
             $ECR_REGISTRY/lakeside-query-worker:$RC_TAG
-          echo "✓ query-worker promoted to release"
+          echo "query-worker promoted to release"
 
       - name: Verify release promotion
         env:
@@ -94,15 +92,13 @@ jobs:
           
           # Verify query-api release
           docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:latest
-          echo "✓ query-api:$RELEASE_TAG and latest verified"
+          echo "query-api:$RELEASE_TAG verified"
           
           # Verify query-worker release
           docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:latest
-          echo "✓ query-worker:$RELEASE_TAG and latest verified"
+          echo "query-worker:$RELEASE_TAG verified"
           
-          echo "🎉 Both query services promoted from RC to release with shared fate!"
+          echo "Both query services promoted from RC to release with shared fate!"
           echo "RC: ${{ github.event.inputs.rc-tag }}"
           echo "Release: $RELEASE_TAG"
 

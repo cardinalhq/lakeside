@@ -3,7 +3,7 @@ name: Build RC
 on:
   push:
     tags:
-      - 'v*-*'  # Matches tags like v1.2.3-rc1, v2.0.0-beta1, etc.
+      - 'v*.*.*-*'
   workflow_dispatch:
     inputs:
       git-ref:
@@ -21,7 +21,6 @@ jobs:
       group: larger-runners
     outputs:
       release-tag: ${{ steps.generate-tag.outputs.release-tag }}
-      latest-tag: ${{ steps.generate-tag.outputs.latest-tag }}
       git-ref: ${{ steps.set-ref.outputs.git-ref }}
 
     steps:
@@ -59,15 +58,10 @@ jobs:
             SHORT_SHA=${GITHUB_SHA:0:7}
             RELEASE_TAG="rc-manual-${TIMESTAMP}-${SHORT_SHA}"
           fi
-          
-          # For RC builds, use latest-rc tag
-          LATEST_TAG="latest-rc"
-          
+
           echo "release-tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
-          echo "latest-tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
-          
+
           echo "Generated shared release tag for both services: ${RELEASE_TAG}"
-          echo "Latest tag: ${LATEST_TAG}"
 
   build-java-artifacts:
     needs: env-setup
@@ -105,7 +99,7 @@ jobs:
           cd src/scala
           echo "Building query-api and query-worker with shared version..."
           ./gradlew :query-api:build :query-worker:build -x test
-          
+
           echo "Build artifacts created:"
           find . -name "*.jar" -path "*/build/libs/*" | head -10
 
@@ -169,7 +163,6 @@ jobs:
             APP_VERSION=${{ needs.env-setup.outputs.release-tag }}
           tags: |
             ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakeside-query-api:${{ needs.env-setup.outputs.release-tag }}
-            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakeside-query-api:${{ needs.env-setup.outputs.latest-tag }}
 
       - name: Build and push query-worker image
         uses: docker/build-push-action@v6
@@ -182,7 +175,6 @@ jobs:
             APP_VERSION=${{ needs.env-setup.outputs.release-tag }}
           tags: |
             ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakeside-query-worker:${{ needs.env-setup.outputs.release-tag }}
-            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakeside-query-worker:${{ needs.env-setup.outputs.latest-tag }}
 
       - name: Verify both images pushed successfully
         env:
@@ -190,14 +182,14 @@ jobs:
           RELEASE_TAG: ${{ needs.env-setup.outputs.release-tag }}
         run: |
           echo "Verifying both images were pushed with shared version tag: $RELEASE_TAG"
-          
+
           # Verify query-api image
           docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG
-          echo "✓ query-api:$RELEASE_TAG verified"
-          
+          echo "query-api:$RELEASE_TAG verified"
+
           # Verify query-worker image
           docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG
-          echo "✓ query-worker:$RELEASE_TAG verified"
-          
-          echo "🎉 Both query services built and pushed successfully with shared fate!"
+          echo "query-worker:$RELEASE_TAG verified"
+
+          echo "Both query services built and pushed successfully with shared fate!"
           echo "Release tag: $RELEASE_TAG"
