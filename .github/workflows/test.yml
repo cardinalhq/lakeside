@@ -22,7 +22,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'eclipse-temurin'
+          distribution: 'temurin'
 
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
