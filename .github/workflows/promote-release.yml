@@ -3,41 +3,41 @@ name: Promote Release
 on:
   workflow_dispatch:
     inputs:
-      source-tag:
+      rc-tag:
         type: string
         required: true
-        description: "Source Docker tag to promote"
-      target-tag:
+        description: "RC Docker tag to promote (e.g., v1.2.3-rc1)"
+      release-tag:
         type: string
         required: true
-        description: "Target Docker tag to promote to"
-      source-environment:
-        type: choice
-        required: true
-        description: "Source environment"
-        options:
-          - dev
-          - test
-          - prod
-      target-environment:
-        type: choice
-        required: true
-        description: "Target environment"
-        options:
-          - dev
-          - test
-          - prod
+        description: "Final release tag (e.g., v1.2.3)"
+      create-release:
+        type: boolean
+        required: false
+        description: "Create GitHub release and git tag"
+        default: true
 
 jobs:
   promote-images:
     runs-on:
       group: larger-runners
-    environment: ${{ github.event.inputs.target-environment }}
     permissions:
       id-token: write
-      contents: read
+      contents: write
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App Token
+        if: ${{ github.event.inputs.create-release == 'true' }}
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GITHUB_APP_ID }}
+          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -53,51 +53,101 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Promote query-api and query-worker together
+      - name: Promote RC to Release
         env:
           ECR_REGISTRY: ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com
-          SOURCE_TAG: ${{ github.event.inputs.source-tag }}
-          TARGET_TAG: ${{ github.event.inputs.target-tag }}
+          RC_TAG: ${{ github.event.inputs.rc-tag }}
+          RELEASE_TAG: ${{ github.event.inputs.release-tag }}
         run: |
-          echo "Promoting both query services from $SOURCE_TAG to $TARGET_TAG with shared fate"
-          echo "Source environment: ${{ github.event.inputs.source-environment }}"
-          echo "Target environment: ${{ github.event.inputs.target-environment }}"
+          echo "Promoting RC build to final release with shared fate"
+          echo "RC Tag: $RC_TAG"
+          echo "Release Tag: $RELEASE_TAG"
           
-          # Verify source images exist before promoting
-          echo "Verifying source images exist..."
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$SOURCE_TAG
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$SOURCE_TAG
-          echo "✓ Source images verified"
+          # Verify RC images exist before promoting
+          echo "Verifying RC images exist..."
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RC_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RC_TAG
+          echo "✓ RC images verified"
           
-          # Promote query-api using buildx imagetools (faster than pull/tag/push)
-          echo "Promoting query-api..."
+          # Promote query-api RC to release
+          echo "Promoting query-api RC to release..."
           docker buildx imagetools create \
-            --tag $ECR_REGISTRY/lakeside-query-api:$TARGET_TAG \
-            $ECR_REGISTRY/lakeside-query-api:$SOURCE_TAG
-          echo "✓ query-api promoted"
+            --tag $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG \
+            --tag $ECR_REGISTRY/lakeside-query-api:latest \
+            $ECR_REGISTRY/lakeside-query-api:$RC_TAG
+          echo "✓ query-api promoted to release"
           
-          # Promote query-worker using buildx imagetools
-          echo "Promoting query-worker..."
+          # Promote query-worker RC to release
+          echo "Promoting query-worker RC to release..."
           docker buildx imagetools create \
-            --tag $ECR_REGISTRY/lakeside-query-worker:$TARGET_TAG \
-            $ECR_REGISTRY/lakeside-query-worker:$SOURCE_TAG
-          echo "✓ query-worker promoted"
+            --tag $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG \
+            --tag $ECR_REGISTRY/lakeside-query-worker:latest \
+            $ECR_REGISTRY/lakeside-query-worker:$RC_TAG
+          echo "✓ query-worker promoted to release"
 
-      - name: Verify both promotions
+      - name: Verify release promotion
         env:
           ECR_REGISTRY: ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com
-          TARGET_TAG: ${{ github.event.inputs.target-tag }}
+          RELEASE_TAG: ${{ github.event.inputs.release-tag }}
         run: |
-          echo "Verifying both services were promoted successfully with shared version: $TARGET_TAG"
+          echo "Verifying both services were promoted successfully to release: $RELEASE_TAG"
           
-          # Verify query-api
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$TARGET_TAG
-          echo "✓ query-api:$TARGET_TAG verified"
+          # Verify query-api release
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:latest
+          echo "✓ query-api:$RELEASE_TAG and latest verified"
           
-          # Verify query-worker
-          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$TARGET_TAG
-          echo "✓ query-worker:$TARGET_TAG verified"
+          # Verify query-worker release
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:latest
+          echo "✓ query-worker:$RELEASE_TAG and latest verified"
           
-          echo "🎉 Both query services promoted successfully with shared fate!"
-          echo "From: ${{ github.event.inputs.source-tag }} (${{ github.event.inputs.source-environment }})"
-          echo "To: $TARGET_TAG (${{ github.event.inputs.target-environment }})"
+          echo "🎉 Both query services promoted from RC to release with shared fate!"
+          echo "RC: ${{ github.event.inputs.rc-tag }}"
+          echo "Release: $RELEASE_TAG"
+
+      - name: Create and push Git tag
+        if: ${{ github.event.inputs.create-release == 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ github.event.inputs.release-tag }}
+          git push origin ${{ github.event.inputs.release-tag }}
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.create-release == 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Generate release notes
+          LAST_RELEASE=$(gh release list --limit 1 --exclude-pre-releases --json tagName --jq '.[0].tagName' || echo "")
+          
+          if [ -n "$LAST_RELEASE" ]; then
+            RELEASE_NOTES="## Query Services Release ${{ github.event.inputs.release-tag }}
+
+          Promoted from RC: ${{ github.event.inputs.rc-tag }}
+
+          ## Changes since $LAST_RELEASE
+          
+          $(git log --pretty=format:"- %s" $LAST_RELEASE..HEAD)
+
+          ## Docker Images
+          - \`lakeside-query-api:${{ github.event.inputs.release-tag }}\`
+          - \`lakeside-query-worker:${{ github.event.inputs.release-tag }}\`"
+          else
+            RELEASE_NOTES="## Query Services Release ${{ github.event.inputs.release-tag }}
+          
+          Promoted from RC: ${{ github.event.inputs.rc-tag }}
+
+          This release includes both lakeside-query-api and lakeside-query-worker images with shared fate.
+
+          ## Docker Images
+          - \`lakeside-query-api:${{ github.event.inputs.release-tag }}\`
+          - \`lakeside-query-worker:${{ github.event.inputs.release-tag }}\`"
+          fi
+          
+          # Create the release
+          gh release create ${{ github.event.inputs.release-tag }} \
+            --title "Query Services Release ${{ github.event.inputs.release-tag }}" \
+            --notes "$RELEASE_NOTES" \
+            --latest

@@ -1,26 +1,19 @@
 name: Build RC
 
 on:
+  push:
+    tags:
+      - 'v*-*'  # Matches tags like v1.2.3-rc1, v2.0.0-beta1, etc.
   workflow_dispatch:
     inputs:
       git-ref:
         type: string
         required: false
-        description: "Git reference to build (defaults to main branch)"
-        default: "main"
-      environment:
-        type: choice
-        required: true
-        description: "Target environment"
-        options:
-          - dev
-          - test
-          - prod
-        default: "dev"
+        description: "Git reference to build (defaults to triggering tag)"
       release-tag:
         type: string
         required: false
-        description: "Custom release tag (auto-generated if not provided)"
+        description: "Custom release tag (auto-generated from git tag if not provided)"
 
 jobs:
   env-setup:
@@ -35,7 +28,13 @@ jobs:
       - name: Set git reference
         id: set-ref
         run: |
-          GIT_REF="${{ github.event.inputs.git-ref || 'main' }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Auto-triggered by tag push
+            GIT_REF="${{ github.ref_name }}"
+          else
+            # Manual workflow_dispatch
+            GIT_REF="${{ github.event.inputs.git-ref || github.ref_name }}"
+          fi
           echo "git-ref=${GIT_REF}" >> $GITHUB_OUTPUT
           echo "Using git reference: ${GIT_REF}"
 
@@ -49,28 +48,20 @@ jobs:
         id: generate-tag
         run: |
           if [ -n "${{ github.event.inputs.release-tag }}" ]; then
+            # Manual override
             RELEASE_TAG="${{ github.event.inputs.release-tag }}"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            # Auto-triggered by tag push - use the git tag as release tag
+            RELEASE_TAG="${{ github.ref_name }}"
           else
+            # Fallback for manual dispatch without custom tag
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
             SHORT_SHA=${GITHUB_SHA:0:7}
-            ENV="${{ github.event.inputs.environment }}"
-            RELEASE_TAG="rc-${ENV}-${TIMESTAMP}-${SHORT_SHA}"
+            RELEASE_TAG="rc-manual-${TIMESTAMP}-${SHORT_SHA}"
           fi
           
-          case "${{ github.event.inputs.environment }}" in
-            "prod")
-              LATEST_TAG="latest"
-              ;;
-            "test")
-              LATEST_TAG="latest-test"
-              ;;
-            "dev")
-              LATEST_TAG="latest-dev"
-              ;;
-            *)
-              LATEST_TAG="latest-dev"
-              ;;
-          esac
+          # For RC builds, use latest-rc tag
+          LATEST_TAG="latest-rc"
           
           echo "release-tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
           echo "latest-tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
@@ -131,7 +122,6 @@ jobs:
     needs: [env-setup, build-java-artifacts]
     runs-on:
       group: larger-runners
-    environment: ${{ github.event.inputs.environment }}
     permissions:
       id-token: write
       contents: read
