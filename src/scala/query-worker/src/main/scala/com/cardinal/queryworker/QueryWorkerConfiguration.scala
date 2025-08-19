@@ -16,13 +16,23 @@
 
 package com.cardinal.queryworker
 
+import akka.actor.ActorSystem
 import com.typesafe.config.{Config, ConfigFactory}
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.{Bean, Configuration}
 
+import javax.annotation.PostConstruct
+
 @Configuration
-class QueryWorkerConfiguration {
+class QueryWorkerConfiguration(private val actorSystem: ActorSystem) {
   private val logger = LoggerFactory.getLogger(getClass)
+
+  @PostConstruct
+  def startHeartbeat(): Unit = {
+    logger.info("Starting worker heartbeat client")
+    val heartbeatClient = new HeartbeatClient()(actorSystem)
+    heartbeatClient.startHeartbeating()
+  }
 
   @Bean
   def config(): Config = {

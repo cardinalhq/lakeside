@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory
 import scala.jdk.CollectionConverters._
 import java.util.concurrent.atomic.AtomicInteger
 
-class KubernetesScaler(namespace: String, labels: Map[String, String]) extends ClusterScaler {
+class KubernetesScaler(namespace: String, labels: Map[String, String]) extends ClusterScaler with ScalingStateProvider {
   private val logger = LoggerFactory.getLogger(getClass)
   private val config = new ConfigBuilder().withNamespace(namespace).build()
   private val coreClient = new KubernetesClientBuilder().withConfig(config).build()
@@ -60,6 +60,31 @@ class KubernetesScaler(namespace: String, labels: Map[String, String]) extends C
     } catch {
       case t: Throwable =>
         logger.error(s"Error scaling to $desiredReplicas replicas", t)
+    }
+  }
+
+  override def getCurrentDesiredReplicas(): Int = {
+    try {
+      nsClient.apps().deployments()
+        .inNamespace(namespace)
+        .withLabels(labelSelector)
+        .list().getItems.asScala
+        .map(_.getSpec.getReplicas.intValue())
+        .sum
+    } catch {
+      case _: Exception => 0
+    }
+  }
+
+  override def getCurrentPodCount(): Int = {
+    try {
+      nsClient.pods()
+        .inNamespace(namespace)
+        .withLabels(labelSelector)
+        .list().getItems.asScala
+        .count(_.getStatus.getPhase == "Running")
+    } catch {
+      case _: Exception => 0
     }
   }
 }
