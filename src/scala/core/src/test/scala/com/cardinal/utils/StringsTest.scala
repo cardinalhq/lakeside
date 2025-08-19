@@ -17,6 +17,7 @@
 package com.cardinal.utils
 
 import org.junit.jupiter.api.Test
+import java.time.Duration
 
 class StringsTest {
 
@@ -25,5 +26,18 @@ class StringsTest {
     assert(Strings.camelToSnakeCase("CPUUtilization") == "cpuutilization")
     assert(Strings.camelToSnakeCase("CPUCreditUsage") == "cpucredit_usage")
     assert(Strings.camelToSnakeCase("DiskReadBytes") == "disk_read_bytes")
+  }
+
+  @Test
+  def testToString(): Unit = {
+    // Test duration to string conversion
+    assert(Strings.toString(Duration.ofSeconds(30)) == "30s")
+    assert(Strings.toString(Duration.ofMinutes(5)) == "5m")
+    assert(Strings.toString(Duration.ofHours(2)) == "2h")
+    assert(Strings.toString(Duration.ofDays(3)) == "3d")
+    assert(Strings.toString(Duration.ofDays(14)) == "2w")
+    
+    // Test non-standard durations that fall back to default toString
+    assert(Strings.toString(Duration.ofMillis(1500)) == "PT1.5S")
   }
 }
