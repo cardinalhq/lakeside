@@ -24,7 +24,6 @@ import com.cardinal.model.WorkerHeartbeat
 import com.cardinal.utils.Commons._
 import com.netflix.atlas.json.Json
 import org.slf4j.LoggerFactory
-import org.springframework.stereotype.Component
 
 import java.net.{InetAddress, NetworkInterface}
 import scala.concurrent.ExecutionContext
@@ -32,7 +31,6 @@ import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success}
 
-@Component
 class HeartbeatClient(implicit system: ActorSystem) {
   private implicit val ec: ExecutionContext = system.dispatcher
   private val logger = LoggerFactory.getLogger(getClass)
