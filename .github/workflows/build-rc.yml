@@ -138,12 +138,14 @@ jobs:
         with:
           audience: sts.amazonaws.com
           role-to-assume: arn:aws:iam::${{ secrets.ECR_ACCOUNT_ID }}:role/${{ secrets.ECR_ROLE_NAME }}
-          aws-region: ${{ secrets.ECR_REGISTRY_REGION }}
+          aws-region: us-east-1
           role-session-name: GitHubActions
 
-      - name: Login to Amazon ECR
-        id: login-ecr
+      - name: Login to Public Amazon ECR
+        id: login-ecr-public
         uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -162,7 +164,7 @@ jobs:
           build-args: |
             APP_VERSION=${{ needs.env-setup.outputs.release-tag }}
           tags: |
-            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakerunner/query-api:${{ needs.env-setup.outputs.release-tag }}
+            public.ecr.aws/cardinalhq.io/lakerunner/query-api:${{ needs.env-setup.outputs.release-tag }}
 
       - name: Build and push query-worker image
         uses: docker/build-push-action@v6
@@ -174,21 +176,20 @@ jobs:
           build-args: |
             APP_VERSION=${{ needs.env-setup.outputs.release-tag }}
           tags: |
-            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakerunner/query-worker:${{ needs.env-setup.outputs.release-tag }}
+            public.ecr.aws/cardinalhq.io/lakerunner/query-worker:${{ needs.env-setup.outputs.release-tag }}
 
       - name: Verify both images pushed successfully
         env:
-          ECR_REGISTRY: ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com
           RELEASE_TAG: ${{ needs.env-setup.outputs.release-tag }}
         run: |
           echo "Verifying both images were pushed with shared version tag: $RELEASE_TAG"
 
           # Verify query-api image
-          docker buildx imagetools inspect $ECR_REGISTRY/lakerunner/query-api:$RELEASE_TAG
+          docker buildx imagetools inspect public.ecr.aws/cardinalhq.io/lakerunner/query-api:$RELEASE_TAG
           echo "query-api:$RELEASE_TAG verified"
 
           # Verify query-worker image
-          docker buildx imagetools inspect $ECR_REGISTRY/lakerunner/query-worker:$RELEASE_TAG
+          docker buildx imagetools inspect public.ecr.aws/cardinalhq.io/lakerunner/query-worker:$RELEASE_TAG
           echo "query-worker:$RELEASE_TAG verified"
 
           echo "Both query services built and pushed successfully with shared fate!"
