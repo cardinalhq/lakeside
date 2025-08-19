@@ -1,0 +1,195 @@
+name: Build RC
+
+on:
+  push:
+    tags:
+      - 'v*.*.*-*'
+  workflow_dispatch:
+    inputs:
+      git-ref:
+        type: string
+        required: false
+        description: "Git reference to build (defaults to triggering tag)"
+      release-tag:
+        type: string
+        required: false
+        description: "Custom release tag (auto-generated from git tag if not provided)"
+
+jobs:
+  env-setup:
+    runs-on:
+      group: larger-runners
+    outputs:
+      release-tag: ${{ steps.generate-tag.outputs.release-tag }}
+      git-ref: ${{ steps.set-ref.outputs.git-ref }}
+
+    steps:
+      - name: Set git reference
+        id: set-ref
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Auto-triggered by tag push
+            GIT_REF="${{ github.ref_name }}"
+          else
+            # Manual workflow_dispatch
+            GIT_REF="${{ github.event.inputs.git-ref || github.ref_name }}"
+          fi
+          echo "git-ref=${GIT_REF}" >> $GITHUB_OUTPUT
+          echo "Using git reference: ${GIT_REF}"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.set-ref.outputs.git-ref }}
+          fetch-depth: 1
+
+      - name: Generate release tag for both services
+        id: generate-tag
+        run: |
+          if [ -n "${{ github.event.inputs.release-tag }}" ]; then
+            # Manual override
+            RELEASE_TAG="${{ github.event.inputs.release-tag }}"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            # Auto-triggered by tag push - use the git tag as release tag
+            RELEASE_TAG="${{ github.ref_name }}"
+          else
+            # Fallback for manual dispatch without custom tag
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            SHORT_SHA=${GITHUB_SHA:0:7}
+            RELEASE_TAG="rc-manual-${TIMESTAMP}-${SHORT_SHA}"
+          fi
+
+          echo "release-tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+
+          echo "Generated shared release tag for both services: ${RELEASE_TAG}"
+
+  build-java-artifacts:
+    needs: env-setup
+    runs-on:
+      group: larger-runners
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.env-setup.outputs.git-ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'eclipse-temurin'
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build both query services
+        run: |
+          cd src/scala
+          echo "Building query-api and query-worker with shared version..."
+          ./gradlew :query-api:build :query-worker:build -x test
+
+          echo "Build artifacts created:"
+          find . -name "*.jar" -path "*/build/libs/*" | head -10
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: query-services-build-artifacts
+          path: |
+            src/scala/query-api/build/libs/
+            src/scala/query-worker/build/libs/
+          retention-days: 7
+
+  build-and-push-images:
+    needs: [env-setup, build-java-artifacts]
+    runs-on:
+      group: larger-runners
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.env-setup.outputs.git-ref }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: query-services-build-artifacts
+          path: src/scala/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          audience: sts.amazonaws.com
+          role-to-assume: arn:aws:iam::${{ secrets.ECR_ACCOUNT_ID }}:role/${{ secrets.ECR_ROLE_NAME }}
+          aws-region: ${{ secrets.ECR_REGISTRY_REGION }}
+          role-session-name: GitHubActions
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        id: buildx
+
+      - name: Build and push query-api image
+        uses: docker/build-push-action@v6
+        with:
+          context: src/scala/query-api
+          platforms: linux/amd64,linux/arm64
+          push: true
+          pull: true
+          build-args: |
+            APP_VERSION=${{ needs.env-setup.outputs.release-tag }}
+          tags: |
+            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakeside-query-api:${{ needs.env-setup.outputs.release-tag }}
+
+      - name: Build and push query-worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: src/scala/query-worker
+          platforms: linux/amd64,linux/arm64
+          push: true
+          pull: true
+          build-args: |
+            APP_VERSION=${{ needs.env-setup.outputs.release-tag }}
+          tags: |
+            ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com/lakeside-query-worker:${{ needs.env-setup.outputs.release-tag }}
+
+      - name: Verify both images pushed successfully
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com
+          RELEASE_TAG: ${{ needs.env-setup.outputs.release-tag }}
+        run: |
+          echo "Verifying both images were pushed with shared version tag: $RELEASE_TAG"
+
+          # Verify query-api image
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG
+          echo "query-api:$RELEASE_TAG verified"
+
+          # Verify query-worker image
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG
+          echo "query-worker:$RELEASE_TAG verified"
+
+          echo "Both query services built and pushed successfully with shared fate!"
+          echo "Release tag: $RELEASE_TAG"

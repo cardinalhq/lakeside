@@ -1,0 +1,149 @@
+name: Promote Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      rc-tag:
+        type: string
+        required: true
+        description: "RC Docker tag to promote (e.g., v1.2.3-rc1)"
+      release-tag:
+        type: string
+        required: true
+        description: "Final release tag (e.g., v1.2.3)"
+      create-release:
+        type: boolean
+        required: false
+        description: "Create GitHub release and git tag"
+        default: true
+
+jobs:
+  promote-images:
+    runs-on:
+      group: larger-runners
+    permissions:
+      id-token: write
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App Token
+        if: ${{ github.event.inputs.create-release == 'true' }}
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GITHUB_APP_ID }}
+          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          audience: sts.amazonaws.com
+          role-to-assume: arn:aws:iam::${{ secrets.ECR_ACCOUNT_ID }}:role/${{ secrets.ECR_ROLE_NAME }}
+          aws-region: ${{ secrets.ECR_REGISTRY_REGION }}
+          role-session-name: GitHubActions
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote RC to Release
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com
+          RC_TAG: ${{ github.event.inputs.rc-tag }}
+          RELEASE_TAG: ${{ github.event.inputs.release-tag }}
+        run: |
+          echo "Promoting RC build to final release with shared fate"
+          echo "RC Tag: $RC_TAG"
+          echo "Release Tag: $RELEASE_TAG"
+          
+          # Verify RC images exist before promoting
+          echo "Verifying RC images exist..."
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RC_TAG
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RC_TAG
+          echo "RC images verified"
+          
+          # Promote query-api RC to release
+          echo "Promoting query-api RC to release..."
+          docker buildx imagetools create \
+            --tag $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG \
+            $ECR_REGISTRY/lakeside-query-api:$RC_TAG
+          echo "query-api promoted to release"
+          
+          # Promote query-worker RC to release
+          echo "Promoting query-worker RC to release..."
+          docker buildx imagetools create \
+            --tag $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG \
+            $ECR_REGISTRY/lakeside-query-worker:$RC_TAG
+          echo "query-worker promoted to release"
+
+      - name: Verify release promotion
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_ACCOUNT_ID }}.dkr.ecr.${{ secrets.ECR_REGISTRY_REGION }}.amazonaws.com
+          RELEASE_TAG: ${{ github.event.inputs.release-tag }}
+        run: |
+          echo "Verifying both services were promoted successfully to release: $RELEASE_TAG"
+          
+          # Verify query-api release
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-api:$RELEASE_TAG
+          echo "query-api:$RELEASE_TAG verified"
+          
+          # Verify query-worker release
+          docker buildx imagetools inspect $ECR_REGISTRY/lakeside-query-worker:$RELEASE_TAG
+          echo "query-worker:$RELEASE_TAG verified"
+          
+          echo "Both query services promoted from RC to release with shared fate!"
+          echo "RC: ${{ github.event.inputs.rc-tag }}"
+          echo "Release: $RELEASE_TAG"
+
+      - name: Create and push Git tag
+        if: ${{ github.event.inputs.create-release == 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ github.event.inputs.release-tag }}
+          git push origin ${{ github.event.inputs.release-tag }}
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.create-release == 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Generate release notes
+          LAST_RELEASE=$(gh release list --limit 1 --exclude-pre-releases --json tagName --jq '.[0].tagName' || echo "")
+          
+          if [ -n "$LAST_RELEASE" ]; then
+            RELEASE_NOTES="## Query Services Release ${{ github.event.inputs.release-tag }}
+
+          Promoted from RC: ${{ github.event.inputs.rc-tag }}
+
+          ## Changes since $LAST_RELEASE
+          
+          $(git log --pretty=format:"- %s" $LAST_RELEASE..HEAD)
+
+          ## Docker Images
+          - \`lakeside-query-api:${{ github.event.inputs.release-tag }}\`
+          - \`lakeside-query-worker:${{ github.event.inputs.release-tag }}\`"
+          else
+            RELEASE_NOTES="## Query Services Release ${{ github.event.inputs.release-tag }}
+          
+          Promoted from RC: ${{ github.event.inputs.rc-tag }}
+
+          This release includes both lakeside-query-api and lakeside-query-worker images with shared fate.
+
+          ## Docker Images
+          - \`lakeside-query-api:${{ github.event.inputs.release-tag }}\`
+          - \`lakeside-query-worker:${{ github.event.inputs.release-tag }}\`"
+          fi
+          
+          # Create the release
+          gh release create ${{ github.event.inputs.release-tag }} \
+            --title "Query Services Release ${{ github.event.inputs.release-tag }}" \
+            --notes "$RELEASE_NOTES" \
+            --latest
