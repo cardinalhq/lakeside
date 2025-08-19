@@ -40,4 +40,31 @@ class StringsTest {
     // Test non-standard durations that fall back to default toString
     assert(Strings.toString(Duration.ofMillis(1500)) == "PT1.5S")
   }
+
+  @Test
+  def testStripMargin(): Unit = {
+    // Test basic margin stripping with single newlines converted to spaces
+    val input1 = """
+      |This is a test
+      |with multiple lines
+      |that should be cleaned up""".stripMargin
+    val expected1 = "This is a test with multiple lines that should be cleaned up"
+    assert(Strings.stripMargin(input1) == expected1)
+
+    // Test double newlines preserved as paragraph breaks
+    val input2 = """
+      |First paragraph
+      |continues here
+      |
+      |
+      |Second paragraph
+      |also continues""".stripMargin
+    val expected2 = "First paragraph continues here\n\nSecond paragraph also continues"
+    assert(Strings.stripMargin(input2) == expected2)
+
+    // Test simple string without margins
+    val input3 = "Simple string"
+    val expected3 = "Simple string"
+    assert(Strings.stripMargin(input3) == expected3)
+  }
 }
