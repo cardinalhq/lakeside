@@ -38,15 +38,34 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.ExecutionContextExecutor
 
 object SegmentCacheManager {
-  implicit val as: ActorSystem = ActorSystem("SegmentCacheSystem")
-  implicit val mat: Materializer = Materializer(as)
-  implicit val ec: ExecutionContextExecutor = as.dispatcher
+  @volatile private var _actorSystem: Option[ActorSystem] = None
+  @volatile private var _materializer: Option[Materializer] = None
+  @volatile private var _executionContext: Option[ExecutionContextExecutor] = None
+  
+  def setActorSystem(system: ActorSystem): Unit = {
+    _actorSystem = Some(system)
+    _materializer = Some(Materializer(system))
+    _executionContext = Some(system.dispatcher)
+  }
+  
+  implicit def as: ActorSystem = _actorSystem.getOrElse(throw new IllegalStateException("ActorSystem not initialized"))
+  implicit def mat: Materializer = _materializer.getOrElse(throw new IllegalStateException("Materializer not initialized"))
+  implicit def ec: ExecutionContextExecutor = _executionContext.getOrElse(throw new IllegalStateException("ExecutionContext not initialized"))
 
   private val metadataLookupTimes = new AtomicReference[EMA](new EMA(0.7))
   private val totalQueryTimes = new AtomicReference[EMA](new EMA(0.7))
   private val timeOfLastQuery = new AtomicLong(0)
-  private val client = io.kubernetes.client.util.Config.defaultClient
-  Configuration.setDefaultApiClient(client)
+  
+  // Lazy initialization to avoid Kubernetes client issues in local environment
+  private lazy val client = {
+    try {
+      val c = io.kubernetes.client.util.Config.defaultClient
+      Configuration.setDefaultApiClient(c)
+      c
+    } catch {
+      case _: Exception => null // For local/test environments where K8s is not available
+    }
+  }
 
   @volatile private var _heartbeatReceiver: Option[WorkerHeartbeatReceiver] = None
   
@@ -69,7 +88,7 @@ object SegmentCacheManager {
       ClusterScaler.load(),
       () => heartbeatReceiver.getReadyWorkerCount,
       heartbeatReceiver.getWorkerFor,
-      isLegacyMode = false // Use new heartbeat mode
+      isLegacyMode = true // Use only worker->API heartbeats, no API->worker discovery
     )
   }
 
@@ -110,9 +129,6 @@ class SegmentCacheManager()(implicit actorSystem: ActorSystem) {
   implicit val mat: akka.stream.Materializer = akka.stream.Materializer(actorSystem)
   private val logger = LoggerFactory.getLogger(getClass)
   private val CACHE_URI = "/api/internal/cacheSegments"
-  locally {
-    SegmentCacheManager.manager
-  }
 
   private val _downloadQueue = StreamUtils
     .blockingQueue[Seq[SegmentInfo]]("downloadQueue", 1024)

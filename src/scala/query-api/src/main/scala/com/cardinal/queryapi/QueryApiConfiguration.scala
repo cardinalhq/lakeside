@@ -18,7 +18,7 @@ package com.cardinal.queryapi
 
 import akka.actor.ActorSystem
 import com.cardinal.config.StorageProfileCache
-import com.cardinal.queryapi.engine.{QueryEngineV2, SegmentCacheManager}
+import com.cardinal.queryapi.engine.{QueryEngineV2, SegmentCacheManager, WorkerHeartbeatReceiver}
 import com.typesafe.config.{Config, ConfigFactory}
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.config.ConfigurableBeanFactory
@@ -36,8 +36,10 @@ class QueryApiConfiguration {
 
   @Bean
   @Scope(value = ConfigurableBeanFactory.SCOPE_SINGLETON)
-  def segmentCacheManager(actorSystem: ActorSystem): SegmentCacheManager = {
+  def segmentCacheManager(actorSystem: ActorSystem, workerHeartbeatReceiver: WorkerHeartbeatReceiver): SegmentCacheManager = {
     implicit val as: ActorSystem = actorSystem
+    SegmentCacheManager.setActorSystem(actorSystem)
+    SegmentCacheManager.setHeartbeatReceiver(workerHeartbeatReceiver)
     new SegmentCacheManager()
   }
 

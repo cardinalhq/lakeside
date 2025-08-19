@@ -364,17 +364,23 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
   private def workerHeartbeat: Route = {
     path("api" / "internal" / "worker" / "heartbeat") {
       post {
-        auth { _ =>
-          entity(as[String]) { payload =>
-            try {
-              val heartbeat = Json.decode[WorkerHeartbeat](payload)
-              workerHeartbeatReceiver.registerHeartbeat(heartbeat)
-              complete(StatusCodes.OK)
-            } catch {
-              case ex: Exception =>
-                logger.warn(s"Invalid heartbeat payload: ${ex.getMessage}")
-                complete(StatusCodes.BadRequest)
+        headerValueByName("Authorization") { authHeader =>
+          val expectedToken = s"Bearer ${AuthToken.secretKey}"
+          if (authHeader == expectedToken) {
+            entity(as[String]) { payload =>
+              try {
+                val heartbeat = Json.decode[WorkerHeartbeat](payload)
+                workerHeartbeatReceiver.registerHeartbeat(heartbeat)
+                complete(StatusCodes.OK)
+              } catch {
+                case ex: Exception =>
+                  logger.warn(s"Invalid heartbeat payload: ${ex.getMessage}")
+                  complete(StatusCodes.BadRequest)
+              }
             }
+          } else {
+            logger.warn(s"Invalid worker heartbeat token")
+            complete(StatusCodes.Unauthorized)
           }
         }
       }
