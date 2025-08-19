@@ -40,7 +40,7 @@ jobs:
           echo "Building and testing query-api and query-worker..."
 
           # Build both services
-          ./gradlew :query-api:build :query-worker:build
+          ./gradlew lakeside-query-api:build lakeside-query-worker:build
 
           echo "Build completed successfully"
 

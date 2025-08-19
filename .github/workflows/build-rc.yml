@@ -98,7 +98,7 @@ jobs:
         run: |
           cd src/scala
           echo "Building query-api and query-worker with shared version..."
-          ./gradlew :query-api:build :query-worker:build -x test
+          ./gradlew lakeside-query-api:build lakeside-query-worker:build -x test
 
           echo "Build artifacts created:"
           find . -name "*.jar" -path "*/build/libs/*" | head -10
