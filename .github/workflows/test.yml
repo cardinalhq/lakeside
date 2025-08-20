@@ -2,8 +2,6 @@ name: Test
 
 on:
   push:
-    paths:
-      - 'src/scala/**'
 
 jobs:
   test-query-services:
@@ -36,7 +34,6 @@ jobs:
 
       - name: Build and test query services
         run: |
-          cd src/scala
           echo "Building and testing query-api and query-worker..."
 
           # Build both services
@@ -47,19 +44,3 @@ jobs:
           # Show build artifacts
           echo "Build artifacts created:"
           find . -name "*.jar" -path "*/build/libs/*" | head -10
-
-      - name: Run additional checks
-        run: |
-          cd src/scala
-          echo "Running additional checks..."
-
-          # Run any linting or additional validation
-          # ./gradlew check
-
-          echo "All checks passed"
-
-      - name: Verify no Docker images were created
-        run: |
-          echo "Test workflow completed - no Docker images created"
-          echo "This workflow only builds and tests the Java artifacts"
-          echo "Use 'Build RC' workflow to create Docker images when needed"

@@ -96,7 +96,6 @@ jobs:
 
       - name: Build both query services
         run: |
-          cd src/scala
           echo "Building query-api and query-worker with shared version..."
           ./gradlew lakeside-query-api:build lakeside-query-worker:build -x test
 
@@ -108,8 +107,8 @@ jobs:
         with:
           name: query-services-build-artifacts
           path: |
-            src/scala/query-api/build/libs/
-            src/scala/query-worker/build/libs/
+            query-api/build/libs/
+            query-worker/build/libs/
           retention-days: 7
 
   build-and-push-images:
@@ -131,7 +130,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: query-services-build-artifacts
-          path: src/scala/
+          path: /
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -157,7 +156,7 @@ jobs:
       - name: Build and push query-api image
         uses: docker/build-push-action@v6
         with:
-          context: src/scala/query-api
+          context: query-api
           platforms: linux/amd64,linux/arm64
           push: true
           pull: true
@@ -169,7 +168,7 @@ jobs:
       - name: Build and push query-worker image
         uses: docker/build-push-action@v6
         with:
-          context: src/scala/query-worker
+          context: query-worker
           platforms: linux/amd64,linux/arm64
           push: true
           pull: true
