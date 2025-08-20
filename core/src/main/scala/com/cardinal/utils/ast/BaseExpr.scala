@@ -335,7 +335,7 @@ object BaseExpr {
     }
 
     val stepTsSql = toStepTsSql(stepMillis)
-    val existingFields = chart.groupBys.filter(g => !nonExistentFields.contains(g))
+    val existingFields = chart.groupBys.filter(g => isSyntheticField(g) || !nonExistentFields.contains(g))
     val groupByProjectionSql = {
       if (chart.groupBys.nonEmpty && existingFields.nonEmpty) {
         s", ${existingFields.map(g => s"\"$g\"").mkString(", ")}"
