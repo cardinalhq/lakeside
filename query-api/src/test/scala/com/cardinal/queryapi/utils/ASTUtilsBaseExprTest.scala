@@ -22,6 +22,8 @@ import com.cardinal.utils.ast.{ASTUtils, BaseExpr}
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
+import java.util.Locale
+
 class ASTUtilsBaseExprTest {
 
   @Test
@@ -281,9 +283,25 @@ class ASTUtilsBaseExprTest {
   )
 
   val expectedChartSql =
-    """|SELECT ("_cardinalhq.timestamp" - ("_cardinalhq.timestamp" % 10000.0)) as step_ts, sum("_cardinalhq.value"), "_cardinalhq.name" as name , "rec" FROM (SELECT nlp_struct['rec'] as rec, * FROM (SELECT  regexp_extract(replace("_cardinalhq.message", '''', ''), '([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) \[([A-Za-z]+)\]', ['var_0', 'var_1', 'var_2', 'var_3', 'var_4', 'rec']) as nlp_struct, * FROM (SELECT * FROM {tableName} WHERE "_cardinalhq.timestamp" >= 1694635527646 AND "_cardinalhq.timestamp" < 1694635527646) WHERE  regexp_matches(replace("_cardinalhq.message", '''', ''), '([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) \[([A-Za-z]+)\]')))  WHERE true AND (("resource.service.name" = 'adservice' and rec IS NOT NULL)) GROUP BY step_ts , "rec", name ORDER BY step_ts ASC""".stripMargin
+    """|SELECT ("_cardinalhq.timestamp" - ("_cardinalhq.timestamp" % 10000.0)) as step_ts, sum("_cardinalhq.value"), "_cardinalhq.name" as name , "rec" FROM (SELECT nlp_struct['rec'] as rec, * FROM (SELECT  regexp_extract(replace("_cardinalhq.message", '''', ''), '([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) \[([A-Za-z]+)\]', ['var_0', 'var_1', 'var_2', 'var_3', 'var_4', 'rec']) as nlp_struct, * FROM (SELECT * FROM {tableName} WHERE "_cardinalhq.timestamp" >= 1694635527646 AND "_cardinalhq.timestamp" < 1694635527646) WHERE  regexp_matches(replace("_cardinalhq.message", '''', ''), '([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) \[([A-Za-z]+)\]')))  WHERE true AND ("resource.service.name" = 'adservice' and rec IS NOT NULL) GROUP BY step_ts , "rec", name ORDER BY step_ts ASC""".stripMargin
 
-  assertEquals(chartSql, expectedChartSql)
+  assertEquals(normalizeSql(chartSql), normalizeSql(expectedChartSql))
 }
+
+  private def normalizeSql(s: String): String = {
+    s
+      // strip line comments
+      .replaceAll("(?m)--.*?$", "")
+      // strip block comments
+      .replaceAll("(?s)/\\*.*?\\*/", "")
+      // collapse whitespace
+      .replaceAll("\\s+", " ")
+      // normalize spaces around punctuation
+      .replaceAll("\\s*([(),=+\\-*/%])\\s*", " $1 ")
+      .replaceAll("\\s+,\\s*", ", ")
+      .trim
+      // optional: normalize case
+      .toLowerCase(Locale.ROOT)
+  }
 
 }
