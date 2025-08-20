@@ -212,4 +212,78 @@ class ASTUtilsBaseExprTest {
     val expectedExemplarSql = """SELECT "_cardinalhq.timestamp", "_cardinalhq.value", "_cardinalhq.name", "_cardinalhq.message", * FROM (SELECT nlp_struct['raw'] as raw, nlp_struct['compressed'] as compressed, * FROM (SELECT  regexp_extract(replace("_cardinalhq.message", '''', ''), '([A-Za-z]+) \| ([A-Za-z]+) \| ([A-Za-z]+) \| \(([^)]*)\) \| ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+), ([A-Za-z]+) \(([^)]*)\)([A-Za-z0-9-_.:]+) ([0-9]+)/([0-9]+) ([A-Za-z0-9-_.:]+)', ['var_1', 'var_2', 'var_3', 'var_4', 'var_5', 'var_6', 'var_7', 'var_8', 'var_9', 'var_10', 'raw', 'compressed', 'var_13']) as nlp_struct, * FROM (SELECT * FROM {tableName} WHERE "_cardinalhq.timestamp" >= 1694635527646 AND "_cardinalhq.timestamp" < 1694635527646) WHERE  regexp_matches(replace("_cardinalhq.message", '''', ''), '([A-Za-z]+) \| ([A-Za-z]+) \| ([A-Za-z]+) \| \(([^)]*)\) \| ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+), ([A-Za-z]+) \(([^)]*)\)([A-Za-z0-9-_.:]+) ([0-9]+)/([0-9]+) ([A-Za-z0-9-_.:]+)'))) WHERE ((("resource.container.name" = 'agent' and regexp_matches("_cardinalhq.message", '.*compressed.*','i')) and raw IS NOT NULL) and compressed IS NOT NULL) ORDER BY "_cardinalhq.timestamp" DESC"""
     assertEquals(exemplarSql, expectedExemplarSql)
   }
+  
+  @Test
+  def testGroupByOnExtractedField(): Unit = {
+  val queryPayload =
+    """
+      |{
+      |  "baseExpressions": {
+      |    "a": {
+      |      "dataset": "logs",
+      |      "returnResults": true,
+      |      "filter": {
+      |        "op": "and",
+      |        "q1": {
+      |          "k": "resource.service.name",
+      |          "v": ["adservice"],
+      |          "op": "eq",
+      |          "dataType": "string",
+      |          "extracted": false,
+      |          "computed": false
+      |        },
+      |        "q2": {
+      |          "k": "rec",
+      |          "v": [""],
+      |          "op": "has",
+      |          "dataType": "string",
+      |          "extracted": true,
+      |          "computed": false
+      |        }
+      |      },
+      |      "extract": {
+      |        "regex": "([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) \\[([A-Za-z]+)\\]",
+      |        "fields": [
+      |          { "name": "var_0", "type": "string" },
+      |          { "name": "var_1", "type": "string" },
+      |          { "name": "var_2", "type": "string" },
+      |          { "name": "var_3", "type": "string" },
+      |          { "name": "var_4", "type": "string" },
+      |          { "name": "rec",   "type": "string" }
+      |        ]
+      |      },
+      |      "chart": {
+      |        "aggregation": "sum",
+      |        "rollup": "sum",
+      |        "groupBys": ["rec"],
+      |        "type": "count"
+      |      }
+      |    }
+      |  }
+      |}
+      |""".stripMargin
+
+  val astInput = ASTUtils.toASTInput(payload = queryPayload)
+  val baseExprAOpt = astInput.baseExpressions.get("a")
+  assert(baseExprAOpt.isDefined, "baseExpr a is not defined")
+  val baseExpr = baseExprAOpt.get
+
+  val ts: Long = 1694635527646L
+  val chartSql = BaseExpr.generateSql(
+    baseExpr = baseExpr,
+    startTs  = ts,
+    endTs    = ts,
+    isTagQuery = false,
+    tagDataType = None,
+    stepInMillis = java.time.Duration.parse("PT10S").toMillis,
+    globalAgg = Some("sum"),
+    nonExistentFields = Set.empty
+  )
+
+  val expectedChartSql =
+    """|SELECT ("_cardinalhq.timestamp" - ("_cardinalhq.timestamp" % 10000.0)) as step_ts, sum("_cardinalhq.value"), "_cardinalhq.name" as name , "rec" FROM (SELECT nlp_struct['rec'] as rec, * FROM (SELECT  regexp_extract(replace("_cardinalhq.message", '''', ''), '([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) \[([A-Za-z]+)\]', ['var_0', 'var_1', 'var_2', 'var_3', 'var_4', 'rec']) as nlp_struct, * FROM (SELECT * FROM {tableName} WHERE "_cardinalhq.timestamp" >= 1694635527646 AND "_cardinalhq.timestamp" < 1694635527646) WHERE  regexp_matches(replace("_cardinalhq.message", '''', ''), '([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) ([A-Za-z]+) \[([A-Za-z]+)\]')))  WHERE true AND (("resource.service.name" = 'adservice' and rec IS NOT NULL)) GROUP BY step_ts , "rec", name ORDER BY step_ts ASC""".stripMargin
+
+  assertEquals(chartSql, expectedChartSql)
+}
+
 }
