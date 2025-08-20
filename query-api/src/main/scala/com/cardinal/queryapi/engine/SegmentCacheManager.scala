@@ -56,9 +56,14 @@ object SegmentCacheManager {
   private val timeOfLastQuery = new AtomicLong(0)
 
   @volatile private var _heartbeatReceiver: Option[WorkerHeartbeatReceiver] = None
+  @volatile private var _workerManager: Option[com.cardinal.discovery.WorkerManager] = None
   
   def setHeartbeatReceiver(receiver: WorkerHeartbeatReceiver): Unit = {
     _heartbeatReceiver = Some(receiver)
+  }
+  
+  def setWorkerManager(manager: com.cardinal.discovery.WorkerManager): Unit = {
+    _workerManager = Some(manager)
   }
   
   def heartbeatReceiver: WorkerHeartbeatReceiver = {
@@ -66,9 +71,16 @@ object SegmentCacheManager {
       throw new IllegalStateException("WorkerHeartbeatReceiver not initialized")
     )
   }
+  
+  def workerManager: com.cardinal.discovery.WorkerManager = {
+    _workerManager.getOrElse(
+      throw new IllegalStateException("WorkerManager not initialized")
+    )
+  }
 
   def waitUntilScaled(): Source[ScalingStatusMessage, NotUsed] = {
-    Source.single(ScalingStatusMessage(s"Ready (${heartbeatReceiver.getReadyWorkerCount} workers)"))
+    workerManager.recordQuery()
+    workerManager.waitForSufficientWorkers()
   }
 
   def getWorkerFor(segmentId: String): Option[Pod] = heartbeatReceiver.getWorkerFor(segmentId)

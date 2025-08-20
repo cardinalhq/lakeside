@@ -17,7 +17,9 @@
 package com.cardinal.queryapi
 
 import akka.actor.ActorSystem
+import akka.stream.Materializer
 import com.cardinal.config.StorageProfileCache
+import com.cardinal.discovery.{ClusterScaler, ClusterWatcher, WorkerManager}
 import com.cardinal.queryapi.engine.{QueryEngineV2, SegmentCacheManager, WorkerHeartbeatReceiver}
 import com.typesafe.config.{Config, ConfigFactory}
 import org.slf4j.LoggerFactory
@@ -36,10 +38,12 @@ class QueryApiConfiguration {
 
   @Bean
   @Scope(value = ConfigurableBeanFactory.SCOPE_SINGLETON)
-  def segmentCacheManager(actorSystem: ActorSystem, workerHeartbeatReceiver: WorkerHeartbeatReceiver): SegmentCacheManager = {
+  @DependsOn(Array("workerManager"))
+  def segmentCacheManager(actorSystem: ActorSystem, workerHeartbeatReceiver: WorkerHeartbeatReceiver, workerManager: WorkerManager): SegmentCacheManager = {
     implicit val as: ActorSystem = actorSystem
     SegmentCacheManager.setActorSystem(actorSystem)
     SegmentCacheManager.setHeartbeatReceiver(workerHeartbeatReceiver)
+    SegmentCacheManager.setWorkerManager(workerManager)
     new SegmentCacheManager()
   }
 
@@ -57,6 +61,26 @@ class QueryApiConfiguration {
       config = config,
       segmentCacheManager = segmentCacheManager,
       storageProfileCache = storageProfileCache
+    )
+  }
+
+  @Bean
+  @Scope(value = ConfigurableBeanFactory.SCOPE_SINGLETON)
+  def workerManager(actorSystem: ActorSystem, workerHeartbeatReceiver: WorkerHeartbeatReceiver): WorkerManager = {
+    implicit val as: ActorSystem = actorSystem
+    implicit val mat: Materializer = Materializer(actorSystem)
+    
+    val minWorkers = sys.env.getOrElse("NUM_MIN_QUERY_WORKERS", "2").toInt
+    val maxWorkers = sys.env.getOrElse("NUM_MAX_QUERY_WORKERS", "30").toInt
+    
+    new WorkerManager(
+      watcher = ClusterWatcher.watch(),
+      minWorkers = minWorkers,
+      maxWorkers = maxWorkers,
+      scaler = ClusterScaler.load(),
+      getHeartbeatingWorkers = () => workerHeartbeatReceiver.getReadyWorkerCount,
+      getHeartbeatingWorkerFor = (key: String) => workerHeartbeatReceiver.getWorkerFor(key),
+      isLegacyMode = false
     )
   }
 }

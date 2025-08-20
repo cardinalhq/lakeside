@@ -51,9 +51,8 @@ class WorkerManager(
   private val readyPods = new AtomicReference[Set[Pod]](Set.empty)
   private val timeOfLastQuery = new AtomicLong(0)
   private val timeOfLastScaleRequest = new AtomicLong(0)
-  private val cfg = ConfigFactory.load()
-  private val scaleUpWaitTime = cfg.getInt("scale-up.wait.time.minutes")
-  private val scaleDownWaitTime = cfg.getInt("scale-down.wait.time.minutes")
+  private val scaleUpWaitTime = sys.env.getOrElse("SCALE_UP_WAIT_MINUTES", "1").toInt
+  private val scaleDownWaitTime = sys.env.getOrElse("SCALE_DOWN_WAIT_MINUTES", "10").toInt
 
   private val scalingMetrics = scaler match {
     case s: ClusterScaler with ScalingStateProvider => Some(new ScalingMetrics(s, getHeartbeatingWorkers))
