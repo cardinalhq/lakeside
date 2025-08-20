@@ -19,6 +19,7 @@ package com.cardinal.config
 import akka.actor.ActorSystem
 import com.cardinal.dbutils.DBDataSources.getConfigSource
 import com.cardinal.model.StorageProfile
+import com.cardinal.utils.Commons.DEFAULT_INSTANCE_NUM
 import com.netflix.atlas.json.Json
 import org.slf4j.LoggerFactory
 
@@ -57,11 +58,19 @@ class StorageProfileCacheControlPlane(actorSystem: ActorSystem) extends StorageP
   }
 
   def getStorageProfile(orgId: String, instanceNum: Int): Option[StorageProfile] = {
-    val map = cacheByOrgIdInstanceNum.get()
-    if (map == null) None
-    else {
-      map.get((orgId, instanceNum))
+    if (instanceNum == DEFAULT_INSTANCE_NUM) {
+      getStorageProfilesByOrgId(orgId).headOption
+    } else {
+      val map = cacheByOrgIdInstanceNum.get()
+      if (map == null) None
+      else {
+        map.get((orgId, instanceNum))
+      }
     }
+  }
+
+  def getStorageProfileByBucketAndOrg(bucket: String, orgId: String): Option[StorageProfile] = {
+    getStorageProfilesByOrgId(orgId).find(_.bucket == bucket)
   }
 
   def getStorageProfilesByOrgId(orgId: String): List[StorageProfile] = {

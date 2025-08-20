@@ -85,6 +85,9 @@ object Commons {
   val REGIONAL_QUERY_API_OVERRIDE_END_POINT : Option[String]  = sys.env.get("REGIONAL_QUERY_API_OVERRIDE_END_POINT")
   val CARDINAL_REGIONAL_DEPLOYMENT_ID = "cardinal-regional"
 
+  val DEFAULT_INSTANCE_NUM = 9999
+  val DEFAULT_COLLECTOR_NAME = "default"
+
   val STORAGE_PROFILE_CLOUD_PROVIDER_GOOGLE = "gcp"
 
   val QUERY_WORKER_CLUSTER = "QUERY_WORKER_CLUSTER"
@@ -173,6 +176,18 @@ object Commons {
     } else {
       s"$FILE_STORE_MOUNT/$customerId/$collectorId/$dateInt/$dataset/$hour"
     }
+  }
+
+  def getDbPath(bucketName: String,
+                customerId: String,
+                collectorId: String,
+                instanceNum: Int,
+                dataset: String,
+                dateInt: String,
+                hour: String,
+                isRemote: Boolean): String = {
+    val effectiveCollectorId = if (instanceNum == DEFAULT_INSTANCE_NUM) DEFAULT_COLLECTOR_NAME else collectorId
+    getDbPath(bucketName, customerId, effectiveCollectorId, dataset, dateInt, hour, isRemote)
   }
 
   private def getBlobStoreProvider: String = {
@@ -516,6 +531,11 @@ object Commons {
         dateInt = dateInt,
         hour = hour).replace("./db", "db")
     }/$segmentId.parquet"
+  }
+
+  def toSegmentPathOnS3(bucketName: String, dataset: String, dateInt: String, hour: String, segmentId: String, customerId: String, collectorId: String, instanceNum: Int): String = {
+    val effectiveCollectorId = if (instanceNum == DEFAULT_INSTANCE_NUM) DEFAULT_COLLECTOR_NAME else collectorId
+    toSegmentPathOnS3(bucketName, dataset, dateInt, hour, segmentId, customerId, effectiveCollectorId)
   }
 
   def round(value: Double, precision: Int): Double = {

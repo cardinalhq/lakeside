@@ -760,6 +760,15 @@ class QueryEngineV2(
                 val (_, endHour) = Commons.toDateIntHour(endTs)
 
                 storageProfileCache.getStorageProfile(request.customerId, instanceNum).foreach { storageProfile =>
+                  val effectiveCollectorId = if (instanceNum == DEFAULT_INSTANCE_NUM) {
+                    DEFAULT_COLLECTOR_NAME
+                  } else {
+                    storageProfile.collectorId.getOrElse(
+                      throw new IllegalArgumentException(
+                        s"No collectorId found while processing storage profile ${storageProfile.storageProfileId}"
+                      )
+                    )
+                  }
                   segmentsResult += SegmentInfo(
                     dateInt = dateInt,
                     hour = endHour,
@@ -772,11 +781,7 @@ class QueryEngineV2(
                     dataset = baseExpr.dataset,
                     customerId = request.customerId,
                     bucketName = storageProfile.bucket,
-                    collectorId = storageProfile.collectorId.getOrElse(
-                      throw new IllegalArgumentException(
-                        s"No collectorId found while processing storage profile ${storageProfile.storageProfileId}"
-                      )
-                    )
+                    collectorId = effectiveCollectorId
                   )
                 }
               }
@@ -882,7 +887,16 @@ class QueryEngineV2(
         val (targetDateInt, targetHour) = Commons.toDateIntHour(startTs)
 
         storageProfileCache.getStorageProfile(customerId, instanceNum).foreach { storageProfile =>
-          val id = s"${segmentId}_${customerId}_${storageProfile.collectorId}_${storageProfile.bucket}"
+          val effectiveCollectorId = if (instanceNum == DEFAULT_INSTANCE_NUM) {
+            DEFAULT_COLLECTOR_NAME
+          } else {
+            storageProfile.collectorId.getOrElse(
+              throw new IllegalArgumentException(
+                s"No collectorId found while processing storage profile ${storageProfile.storageProfileId}"
+              )
+            )
+          }
+          val id = s"${segmentId}_${customerId}_${effectiveCollectorId}_${storageProfile.bucket}"
           val segmentInfo = segmentInfoMap.getOrElseUpdate(
             id, {
               SegmentInfo(
@@ -896,11 +910,7 @@ class QueryEngineV2(
                 dataset = baseExpr.dataset,
                 customerId = customerId,
                 bucketName = storageProfile.bucket,
-                collectorId = storageProfile.collectorId.getOrElse(
-                  throw new IllegalArgumentException(
-                    s"No collectorId found while processing storage profile ${storageProfile.storageProfileId}"
-                  )
-                ),
+                collectorId = effectiveCollectorId,
                 frequency = frequencyToUse,
               )
             }

@@ -17,6 +17,7 @@
 package com.cardinal.config
 
 import com.cardinal.model.StorageProfile
+import com.cardinal.utils.Commons.DEFAULT_INSTANCE_NUM
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.{DeserializationFeature, ObjectMapper}
@@ -107,8 +108,16 @@ class StorageProfileCacheFile private (initialProfiles: List[StorageProfile])
   override def getStorageProfile(orgId: String, collectorId: String, bucket: String): Option[StorageProfile] =
     profiles.find(p => p.organizationId == orgId && p.collectorId.contains(collectorId) && p.bucket == bucket)
 
-  override def getStorageProfile(orgId: String, instanceNum: Int): Option[StorageProfile] =
-    profiles.find(p => p.organizationId == orgId && p.instanceNum.contains(instanceNum))
+  override def getStorageProfile(orgId: String, instanceNum: Int): Option[StorageProfile] = {
+    if (instanceNum == DEFAULT_INSTANCE_NUM) {
+      getStorageProfilesByOrgId(orgId).headOption
+    } else {
+      profiles.find(p => p.organizationId == orgId && p.instanceNum.contains(instanceNum))
+    }
+  }
+
+  override def getStorageProfileByBucketAndOrg(bucket: String, orgId: String): Option[StorageProfile] =
+    profiles.find(p => p.bucket == bucket && p.organizationId == orgId)
 
   override def getStorageProfilesByOrgId(orgId: String): List[StorageProfile] =
     profiles.filter(_.organizationId == orgId)

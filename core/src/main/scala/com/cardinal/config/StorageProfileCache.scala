@@ -25,5 +25,7 @@ trait StorageProfileCache {
 
   def getStorageProfile(orgId: String, instanceNum: Int): Option[StorageProfile]
 
+  def getStorageProfileByBucketAndOrg(bucket: String, orgId: String): Option[StorageProfile]
+
   def getStorageProfilesByOrgId(orgId: String): List[StorageProfile]
 }
