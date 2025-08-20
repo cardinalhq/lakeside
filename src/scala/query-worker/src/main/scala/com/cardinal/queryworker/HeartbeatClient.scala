@@ -55,11 +55,13 @@ class HeartbeatClient(implicit system: ActorSystem) {
     
     // Check if we're in Kubernetes environment for service discovery
     val executionEnv = sys.env.getOrElse("EXECUTION_ENVIRONMENT", "local")
+    logger.info(s"Worker heartbeat mode: EXECUTION_ENVIRONMENT=$executionEnv")
     
-    if (executionEnv == "kubernetes") {
+    if (executionEnv.equalsIgnoreCase("kubernetes")) {
       startKubernetesDiscovery(localIp)
     } else {
       // Fallback to single endpoint for local/testing
+      logger.info(s"Using single endpoint mode (non-kubernetes environment: $executionEnv)")
       val queryApiEndpoint = sys.env.getOrElse("QUERY_API_ENDPOINT", {
         throw new IllegalStateException("QUERY_API_ENDPOINT environment variable is required but not set")
       })
