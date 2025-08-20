@@ -21,7 +21,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpMethods, HttpRequest}
 import akka.stream.Materializer
-import com.cardinal.discovery.{KubernetesWatcher, Pod}
+import com.cardinal.discovery.{EcsTaskWatcher, KubernetesWatcher, Pod}
 import com.cardinal.model.WorkerHeartbeat
 import com.cardinal.utils.Commons._
 import com.cardinal.utils.EnvUtils
@@ -57,16 +57,19 @@ class HeartbeatClient(implicit system: ActorSystem) {
     val executionEnv = sys.env.getOrElse("EXECUTION_ENVIRONMENT", "local")
     logger.info(s"Worker heartbeat mode: EXECUTION_ENVIRONMENT=$executionEnv")
     
-    if (executionEnv.equalsIgnoreCase("kubernetes")) {
-      startKubernetesDiscovery(localIp)
-    } else {
-      // Fallback to single endpoint for local/testing
-      logger.info(s"Using single endpoint mode (non-kubernetes environment: $executionEnv)")
-      val queryApiEndpoint = sys.env.getOrElse("QUERY_API_ENDPOINT", {
-        throw new IllegalStateException("QUERY_API_ENDPOINT environment variable is required but not set")
-      })
-      logger.info(s"Starting heartbeat to single endpoint $queryApiEndpoint with IP $localIp")
-      startSingleEndpointHeartbeat(queryApiEndpoint, localIp)
+    executionEnv.toLowerCase match {
+      case "kubernetes" =>
+        startKubernetesDiscovery(localIp)
+      case "ecs" =>
+        startEcsDiscovery(localIp)
+      case _ =>
+        // Fallback to single endpoint for local/testing
+        logger.info(s"Using single endpoint mode (non-kubernetes/ecs environment: $executionEnv)")
+        val queryApiEndpoint = sys.env.getOrElse("QUERY_API_ENDPOINT", {
+          throw new IllegalStateException("QUERY_API_ENDPOINT environment variable is required but not set")
+        })
+        logger.info(s"Starting heartbeat to single endpoint $queryApiEndpoint with IP $localIp")
+        startSingleEndpointHeartbeat(queryApiEndpoint, localIp)
     }
   }
   
@@ -105,6 +108,39 @@ class HeartbeatClient(implicit system: ActorSystem) {
       val oldEndpoints = currentApiEndpoints.getAndSet(state.current)
       if (state.current != oldEndpoints) {
         logger.info(s"API endpoints updated (${deploymentType}): ${state.current.map(_.ip).mkString("[", ", ", "]")}")
+      }
+    }
+    
+    // Start periodic heartbeating to all discovered endpoints
+    system.scheduler.scheduleWithFixedDelay(
+      initialDelay = 5.seconds,
+      delay = heartbeatInterval
+    ) { () =>
+      sendHeartbeatsToAllEndpoints(localIp)
+    }
+  }
+  
+  private def startEcsDiscovery(localIp: String): Unit = {
+    logger.info(s"Starting ECS-based API discovery for worker IP $localIp")
+    
+    // Load ECS configuration for query-api service discovery
+    val queryApiServiceName = EnvUtils.mustFirstEnv(Seq("QUERY_API_SERVICE_NAME", "ECS_API_SERVICE_NAME"))
+    val queryApiClusterName = EnvUtils.mustFirstEnv(Seq("QUERY_API_CLUSTER_NAME", "ECS_API_CLUSTER_NAME"))
+    val pollingIntervalSecs = sys.env.getOrElse("API_POLL_INTERVAL_SECONDS", "10").toInt
+    
+    logger.info(s"ECS discovery config: service=$queryApiServiceName, cluster=$queryApiClusterName")
+    
+    // Start watching for query-api task endpoints
+    val discoverySource = EcsTaskWatcher.startWatching(
+      serviceName = queryApiServiceName,
+      clusterName = queryApiClusterName,
+      pollingInterval = pollingIntervalSecs.seconds
+    )
+    
+    discoverySource.runForeach { state =>
+      val oldEndpoints = currentApiEndpoints.getAndSet(state.current)
+      if (state.current != oldEndpoints) {
+        logger.info(s"API endpoints updated (ECS): ${state.current.map(_.ip).mkString("[", ", ", "]")}")
       }
     }
     
