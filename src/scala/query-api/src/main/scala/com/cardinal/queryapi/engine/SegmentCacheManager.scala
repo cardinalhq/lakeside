@@ -23,14 +23,13 @@ import akka.http.scaladsl.model._
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import com.cardinal.datastructures.EMA
-import com.cardinal.discovery.{ClusterScaler, ClusterWatcher, Pod, WorkerManager}
+import com.cardinal.discovery.Pod
 import com.cardinal.model.query.common.SegmentInfo
 import com.cardinal.model.{DownloadSegmentRequest, Heartbeat, ScalingStatusMessage, SegmentRequest}
-import com.cardinal.queryapi.engine.SegmentCacheManager.{getWorkerFor, manager, readyPodCount, timeOfLastQuery, toSegmentPathOnS3}
+import com.cardinal.queryapi.engine.SegmentCacheManager.{getWorkerFor, readyPodCount, timeOfLastQuery, toSegmentPathOnS3}
 import com.cardinal.utils.Commons._
 import com.cardinal.utils.StreamUtils
 import com.netflix.atlas.json.Json
-import io.kubernetes.client.openapi.Configuration
 import org.slf4j.LoggerFactory
 
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
@@ -55,17 +54,6 @@ object SegmentCacheManager {
   private val metadataLookupTimes = new AtomicReference[EMA](new EMA(0.7))
   private val totalQueryTimes = new AtomicReference[EMA](new EMA(0.7))
   private val timeOfLastQuery = new AtomicLong(0)
-  
-  // Lazy initialization to avoid Kubernetes client issues in local environment
-  private lazy val client = {
-    try {
-      val c = io.kubernetes.client.util.Config.defaultClient
-      Configuration.setDefaultApiClient(c)
-      c
-    } catch {
-      case _: Exception => null // For local/test environments where K8s is not available
-    }
-  }
 
   @volatile private var _heartbeatReceiver: Option[WorkerHeartbeatReceiver] = None
   
@@ -78,28 +66,14 @@ object SegmentCacheManager {
       throw new IllegalStateException("WorkerHeartbeatReceiver not initialized")
     )
   }
-  private lazy val manager = {
-    val minWorkers = sys.env.getOrElse("NUM_MIN_QUERY_WORKERS", "2").toInt
-    val maxWorkers = sys.env.getOrElse("NUM_MAX_QUERY_WORKERS", "30").toInt
-    new WorkerManager(
-      ClusterWatcher.watch(),
-      minWorkers,
-      maxWorkers,
-      ClusterScaler.load(),
-      () => heartbeatReceiver.getReadyWorkerCount,
-      heartbeatReceiver.getWorkerFor,
-      isLegacyMode = true // Use only worker->API heartbeats, no API->worker discovery
-    )
-  }
 
   def waitUntilScaled(): Source[ScalingStatusMessage, NotUsed] = {
-    manager.recordQuery()
-    manager.waitForSufficientWorkers()
+    Source.single(ScalingStatusMessage(s"Ready (${heartbeatReceiver.getReadyWorkerCount} workers)"))
   }
 
-  def getWorkerFor(segmentId: String): Option[Pod] = manager.getWorkerFor(segmentId)
+  def getWorkerFor(segmentId: String): Option[Pod] = heartbeatReceiver.getWorkerFor(segmentId)
 
-  def readyPodCount: Int = manager.podCount
+  def readyPodCount: Int = heartbeatReceiver.getReadyWorkerCount
 
   def toSegmentPathOnS3(
     bucketName: String,
