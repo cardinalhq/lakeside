@@ -759,25 +759,28 @@ class QueryEngineV2(
 
                 val (_, endHour) = Commons.toDateIntHour(endTs)
 
-                storageProfileCache.getStorageProfile(request.customerId, instanceNum).foreach { storageProfile =>
-                  segmentsResult += SegmentInfo(
-                    dateInt = dateInt,
-                    hour = endHour,
-                    segmentId = s"$segmentId",
-                    sealedStatus = true,
-                    startTs = startTs,
-                    endTs = endTs,
-                    frequency = frequencyToUse,
-                    exprId = baseExpr.id,
-                    dataset = baseExpr.dataset,
-                    customerId = request.customerId,
-                    bucketName = storageProfile.bucket,
-                    collectorId = storageProfile.collectorId.getOrElse(
-                      throw new IllegalArgumentException(
-                        s"No collectorId found while processing storage profile ${storageProfile.storageProfileId}"
+                storageProfileCache.getStorageProfile(request.customerId, instanceNum) match {
+                  case Some(storageProfile) =>
+                    segmentsResult += SegmentInfo(
+                      dateInt = dateInt,
+                      hour = endHour,
+                      segmentId = s"$segmentId",
+                      sealedStatus = true,
+                      startTs = startTs,
+                      endTs = endTs,
+                      frequency = frequencyToUse,
+                      exprId = baseExpr.id,
+                      dataset = baseExpr.dataset,
+                      customerId = request.customerId,
+                      bucketName = storageProfile.bucket,
+                      collectorId = storageProfile.collectorId.getOrElse(
+                        throw new IllegalArgumentException(
+                          s"No collectorId found while processing storage profile ${storageProfile.storageProfileId}"
+                        )
                       )
                     )
-                  )
+                  case None =>
+                    logger.warn(s"Storage profile not found for customerId: ${request.customerId}, instanceNum: $instanceNum")
                 }
               }
               val e = System.currentTimeMillis()
