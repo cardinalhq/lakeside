@@ -31,12 +31,12 @@ import com.cardinal.logs.LogCommons._
 import com.cardinal.model._
 import com.cardinal.model.query.common.SequencingStrategy.computeReplaySequence
 import com.cardinal.model.query.common._
-import com.cardinal.queryapi.engine.QueryEngineV2.{mergeSortedSource, toSegmentRequests, TEN_SEC_DURATION}
+import com.cardinal.queryapi.engine.QueryEngineV2.{TEN_SEC_DURATION, mergeSortedSource, toSegmentRequests}
 import com.cardinal.queryapi.engine.SegmentCacheManager.updateMetadataLookupTime
 import com.cardinal.queryapi.engine.SegmentSequencer.allSources
 import com.cardinal.utils.Commons._
 import com.cardinal.utils.ast.ASTUtils._
-import com.cardinal.utils.ast.BaseExpr.{isTagSynthetic, CARDINALITY_ESTIMATE_AGGREGATION}
+import com.cardinal.utils.ast.BaseExpr.{CARDINALITY_ESTIMATE_AGGREGATION, isTagSynthetic}
 import com.cardinal.utils.ast.FormulaListener.toFormulaAST
 import com.cardinal.utils.ast.SketchTags.MAP_SKETCH_TYPE
 import com.cardinal.utils.ast._
@@ -74,16 +74,16 @@ object QueryEngineV2 {
   }
 
   def mergeSortedSource(
-    sources: List[Source[Either[DataPoint, SketchInput], Any]],
-    reverseSort: Boolean
-  ): Source[Either[DataPoint, SketchInput], Any] = {
+                         sources: List[Source[Either[DataPoint, SketchInput], Any]],
+                         reverseSort: Boolean
+                       ): Source[Either[DataPoint, SketchInput], Any] = {
     implicit val ord: Ordering[Either[DataPoint, SketchInput]] = (x, y) => {
       val xTimestamp = x match {
-        case Left(value)  => value.timestamp
+        case Left(value) => value.timestamp
         case Right(value) => value.timestamp
       }
       val yTimestamp = y match {
-        case Left(value)  => value.timestamp
+        case Left(value) => value.timestamp
         case Right(value) => value.timestamp
       }
       if (reverseSort) {
@@ -97,12 +97,12 @@ object QueryEngineV2 {
   }
 
   def toSegmentRequests(
-    baseExpr: BaseExpr,
-    step: Long,
-    isTagQuery: Boolean,
-    segments: List[SegmentInfo],
-    tagDataType: Option[TagDataType]
-  ): List[SegmentRequest] = {
+                         baseExpr: BaseExpr,
+                         step: Long,
+                         isTagQuery: Boolean,
+                         segments: List[SegmentInfo],
+                         tagDataType: Option[TagDataType]
+                       ): List[SegmentRequest] = {
     segments.map(
       segment => {
         segment.toSegmentRequest(queryTags = baseExpr.queryTags())
@@ -111,13 +111,13 @@ object QueryEngineV2 {
   }
 
   def sourceFromRemote[R](
-    uri: String,
-    func: ByteString => R,
-    ip: String,
-    pushDownRequest: PushDownRequest,
-    useHttps: Boolean = false,
-    headers: Seq[RawHeader] = List.empty
-  )(implicit as: ActorSystem): Source[R, NotUsed] = {
+                           uri: String,
+                           func: ByteString => R,
+                           ip: String,
+                           pushDownRequest: PushDownRequest,
+                           useHttps: Boolean = false,
+                           headers: Seq[RawHeader] = List.empty
+                         )(implicit as: ActorSystem): Source[R, NotUsed] = {
     Source
       .single(pushDownRequest)
       .map(
@@ -127,7 +127,7 @@ object QueryEngineV2 {
             uri = uri,
             headers = headers,
             entity = HttpEntity(PushDownRequest.toJson(payload))
-        )
+          )
       )
       .via(toRequestFlow(ip, useHttps))
       .flatMapConcat(resp => resp.entity.dataBytes)
@@ -146,9 +146,9 @@ object QueryEngineV2 {
   }
 
   private def toRequestFlow(
-    podIp: String,
-    useHttps: Boolean
-  )(implicit as: ActorSystem): Flow[HttpRequest, HttpResponse, Future[Http.OutgoingConnection]] = {
+                             podIp: String,
+                             useHttps: Boolean
+                           )(implicit as: ActorSystem): Flow[HttpRequest, HttpResponse, Future[Http.OutgoingConnection]] = {
     if (useHttps) {
       Http().outgoingConnectionHttps(host = podIp)
     } else {
@@ -158,11 +158,11 @@ object QueryEngineV2 {
 }
 
 class QueryEngineV2(
-  actorSystem: ActorSystem,
-  config: Config,
-  segmentCacheManager: SegmentCacheManager,
-  storageProfileCache: StorageProfileCache
-) {
+                     actorSystem: ActorSystem,
+                     config: Config,
+                     segmentCacheManager: SegmentCacheManager,
+                     storageProfileCache: StorageProfileCache
+                   ) {
   implicit val as: ActorSystem = actorSystem
   implicit val ec: ExecutionContext = as.dispatcher
   implicit val scheduler: Scheduler = as.scheduler
@@ -171,13 +171,13 @@ class QueryEngineV2(
   // This method sources the provided `segments` list, for the baseExpr by pushing down regional query/query-workers
   // The return type can either be `DataPoint` for exemplar queries or can be `SketchInput` for aggregates.
   private def sourceBaseExpr(
-    queryId: String,
-    baseExpr: BaseExpr,
-    reverseSort: Boolean,
-    stepInMillis: Long,
-    segments: List[SegmentInfo],
-    isTagQuery: Boolean = false
-  ): Source[Either[DataPoint, SketchInput], NotUsed] = {
+                              queryId: String,
+                              baseExpr: BaseExpr,
+                              reverseSort: Boolean,
+                              stepInMillis: Long,
+                              segments: List[SegmentInfo],
+                              isTagQuery: Boolean = false
+                            ): Source[Either[DataPoint, SketchInput], NotUsed] = {
     Source
       .single(segments)
       .map(
@@ -188,7 +188,7 @@ class QueryEngineV2(
             isTagQuery = isTagQuery,
             segments = segments,
             tagDataType = None
-        )
+          )
       )
       .map(segments => {
         val sources = allSources(
@@ -209,13 +209,13 @@ class QueryEngineV2(
   }
 
   def evaluate(
-    astInput: ASTInput,
-    startDateTime: Long,
-    endDateTime: Long,
-    step: Duration,
-    customerId: String,
-    queryId: String
-  ): Source[GenericSSEPayload, NotUsed] = {
+                astInput: ASTInput,
+                startDateTime: Long,
+                endDateTime: Long,
+                step: Duration,
+                customerId: String,
+                queryId: String
+              ): Source[GenericSSEPayload, NotUsed] = {
     val baseExprSources = astInput.baseExpressions.filter(_._2.returnResults).map {
       case (baseExprId, baseExpr) =>
         baseExpr.chartOpts match {
@@ -263,23 +263,23 @@ class QueryEngineV2(
           end = endDateTime,
           step = step,
           customerId = customerId
-      )
+        )
     )
     (baseExprSources ++ formulaSources).fold(Source.empty)((s1, s2) => s1.merge(s2))
   }
 
   private def evaluateBaseExpr(
-    queryId: String,
-    customerId: String,
-    step: Duration,
-    baseExprId: String,
-    baseExpr: BaseExpr,
-    segments: List[SegmentInfo],
-  ): Source[Map[String, EvalResult], Any] = {
+                                queryId: String,
+                                customerId: String,
+                                step: Duration,
+                                baseExprId: String,
+                                baseExpr: BaseExpr,
+                                segments: List[SegmentInfo],
+                              ): Source[Map[String, EvalResult], Any] = {
     val copts = baseExpr.chartOpts.get
     val aggregations = copts.aggregation match {
       case AVG => Set(SUM, COUNT)
-      case _   => Set(copts.aggregation)
+      case _ => Set(copts.aggregation)
     }
 
     val sources = aggregations.map(
@@ -290,12 +290,12 @@ class QueryEngineV2(
           stepInMillis = step.toMillis,
           segments = segments,
           queryId = queryId
-      )
+        )
     )
     // For aggregate queries, reverseSort should be false because of how time grouping works in evalASTFlow
     val merged = mergeSortedSource(sources.toList, reverseSort = false)
       .map {
-        case Left(_)      => None
+        case Left(_) => None
         case Right(value) => Some(value)
       }
       .filter(_.isDefined)
@@ -308,14 +308,14 @@ class QueryEngineV2(
   }
 
   private def evaluateFormula(
-    formula: String,
-    baseExpressions: Map[String, BaseExpr],
-    start: Long,
-    end: Long,
-    step: Duration,
-    customerId: String,
-    queryId: String
-  ): Source[GenericSSEPayload, NotUsed] = {
+                               formula: String,
+                               baseExpressions: Map[String, BaseExpr],
+                               start: Long,
+                               end: Long,
+                               step: Duration,
+                               customerId: String,
+                               queryId: String
+                             ): Source[GenericSSEPayload, NotUsed] = {
     val formulaAST = toFormulaAST(formula, baseExpressions)
     segmentSource(
       baseExpressions = getBaseExpressionsUsedInAST(formulaAST),
@@ -353,7 +353,7 @@ class QueryEngineV2(
                           sketchType = MAP_SKETCH_TYPE,
                           sketch = Right(Map[String, Double](SUM -> evalResult.value))
                         )
-                    )
+                      )
                   )
                   .toList
 
@@ -371,7 +371,7 @@ class QueryEngineV2(
         val modifiedBaseExpressions = getBaseExpressionsUsedInAST(modifiedFormulaAST).map(b => b.id -> b).toMap
         mergeSortedSource(baseExprSources, reverseSort = false)
           .map {
-            case Left(_)      => None
+            case Left(_) => None
             case Right(value) => Some(value)
           }
           .filter(_.isDefined)
@@ -389,10 +389,10 @@ class QueryEngineV2(
   }
 
   private def evalASTFlow(
-    ast: AST,
-    func: SketchInput => Option[BaseExpr],
-    step: Duration
-  ): Flow[List[SketchInput], Map[String, EvalResult], NotUsed] = {
+                           ast: AST,
+                           func: SketchInput => Option[BaseExpr],
+                           step: Duration
+                         ): Flow[List[SketchInput], Map[String, EvalResult], NotUsed] = {
     Flow[List[SketchInput]]
       .via(astEvalFlow(ast, baseExprLookup = func, step = step))
   }
@@ -407,9 +407,9 @@ class QueryEngineV2(
               `type` = "timeseries",
               message = Map[String, AnyRef](
                 "timestamp" -> Long.box(evalResult.timestamp),
-                "tags"      -> evalResult.tags,
-                "value"     -> Double.box(evalResult.value),
-                "label"     -> ast.label(evalResult.tags)
+                "tags" -> evalResult.tags,
+                "value" -> Double.box(evalResult.value),
+                "label" -> ast.label(evalResult.tags)
               )
             )
           }.toList)
@@ -417,14 +417,14 @@ class QueryEngineV2(
   }
 
   def evaluateTagQuery(
-    tagDataType: Option[TagDataType],
-    baseExpr: BaseExpr,
-    startDateTime: Long,
-    endDateTime: Long,
-    step: Duration,
-    customerId: String,
-    queryId: String,
-  ): Source[GenericSSEPayload, NotUsed] = {
+                        tagDataType: Option[TagDataType],
+                        baseExpr: BaseExpr,
+                        startDateTime: Long,
+                        endDateTime: Long,
+                        step: Duration,
+                        customerId: String,
+                        queryId: String,
+                      ): Source[GenericSSEPayload, NotUsed] = {
     val modifiedStep = if (baseExpr.dataset != METRICS) TEN_SEC_DURATION else step
     var modifiedBaseExpr = tagDataType match {
       case Some(td) =>
@@ -475,7 +475,7 @@ class QueryEngineV2(
                 case Left(datapoint) =>
                   Some(GenericSSEPayload(message = datapoint.tags))
                 case Right(_) => None
-            }
+              }
           )
           .recover {
             case e: Exception =>
@@ -486,19 +486,19 @@ class QueryEngineV2(
           .map(_.get)
       }
 
-//    TagQueryUtils.aggregate(customerId, tagDataType, source, metricInfoCache)
-      source
+    //    TagQueryUtils.aggregate(customerId, tagDataType, source, metricInfoCache)
+    source
   }
 
   private def streamExemplars(
-    startDateTime: Long,
-    endDateTime: Long,
-    step: Duration,
-    baseExprId: String,
-    baseExpr: BaseExpr,
-    customerId: String,
-    queryId: String
-  ): Source[GenericSSEPayload, NotUsed] = {
+                               startDateTime: Long,
+                               endDateTime: Long,
+                               step: Duration,
+                               baseExprId: String,
+                               baseExpr: BaseExpr,
+                               customerId: String,
+                               queryId: String
+                             ): Source[GenericSSEPayload, NotUsed] = {
     // treat as a query for exemplars
     val modifiedBaseExpr = baseExpr.copy(chartOpts = None)
     segmentSource(
@@ -550,13 +550,13 @@ class QueryEngineV2(
   }
 
   private def segmentSource(
-    baseExpressions: List[BaseExpr],
-    frequency: Duration,
-    startDateTime: Long,
-    endDateTime: Long,
-    customerId: String,
-    queryId: String
-  ): Source[List[SegmentGroup], NotUsed] = {
+                             baseExpressions: List[BaseExpr],
+                             frequency: Duration,
+                             startDateTime: Long,
+                             endDateTime: Long,
+                             customerId: String,
+                             queryId: String
+                           ): Source[List[SegmentGroup], NotUsed] = {
     val shouldReverseSort = checkShouldReverseSort(baseExpressions.head)
 
     relevantSegments(
@@ -576,8 +576,8 @@ class QueryEngineV2(
         val segmentEndTs = segments.map(_.endTs).max
         logger.info(
           s"[$queryId] Incoming numSegments = ${segments.size}, sealed = ${segments.size}," +
-          s" startTs = ${new DateTime(segmentStartTs)}," +
-          s" endTs = ${new DateTime(segmentEndTs)}"
+            s" startTs = ${new DateTime(segmentStartTs)}," +
+            s" endTs = ${new DateTime(segmentEndTs)}"
         )
         computeReplaySequence(
           segments,
@@ -596,12 +596,12 @@ class QueryEngineV2(
   }
 
   def computeCardinality(
-    mainBaseExpr: BaseExpr,
-    s: Long,
-    e: Long,
-    customerId: String,
-    queryId: String = ""
-  ): Source[Double, NotUsed] = {
+                          mainBaseExpr: BaseExpr,
+                          s: Long,
+                          e: Long,
+                          customerId: String,
+                          queryId: String = ""
+                        ): Source[Double, NotUsed] = {
     segmentSource(
       baseExpressions = List(mainBaseExpr),
       frequency = Duration.parse("PT60S"),
@@ -641,7 +641,7 @@ class QueryEngineV2(
                     case Right(value) =>
                       value.sketchTags.sketch match {
                         case Left(value) => Some(value)
-                        case Right(_)    => None
+                        case Right(_) => None
                       }
                   }
                   .filter(_.isDefined)
@@ -667,13 +667,13 @@ class QueryEngineV2(
   }
 
   def computeCardinality(
-    serviceName: Option[String],
-    metricName: String,
-    tags: Set[String],
-    s: Long,
-    e: Long,
-    customerId: String
-  ): Source[Double, NotUsed] = {
+                          serviceName: Option[String],
+                          metricName: String,
+                          tags: Set[String],
+                          s: Long,
+                          e: Long,
+                          customerId: String
+                        ): Source[Double, NotUsed] = {
     val filter = serviceName match {
       case Some(s) =>
         BinaryClause(
@@ -697,13 +697,13 @@ class QueryEngineV2(
   }
 
   private def relevantSegments(
-    baseExpressions: List[BaseExpr],
-    startDateTime: Long,
-    endDateTime: Long,
-    customerId: String,
-    queryId: String,
-    frequency: Long
-  ): Source[List[SegmentInfo], NotUsed] = {
+                                baseExpressions: List[BaseExpr],
+                                startDateTime: Long,
+                                endDateTime: Long,
+                                customerId: String,
+                                queryId: String,
+                                frequency: Long
+                              ): Source[List[SegmentInfo], NotUsed] = {
     val startTs = startDateTime
     val endTs = endDateTime
     val fpRequest = FingerprintRequest(
@@ -827,16 +827,16 @@ class QueryEngineV2(
   }
 
   private def fetchLogSegments(
-    customerId: String,
-    baseExpr: BaseExpr,
-    skipSegmentResolution: Boolean = false,
-    dateInt: String,
-    tq: TrigramQuery,
-    fingerprints: Set[Long],
-    startTs: Long,
-    endTs: Long,
-    frequencyToUse: Long
-  ): List[SegmentInfo] = {
+                                customerId: String,
+                                baseExpr: BaseExpr,
+                                skipSegmentResolution: Boolean = false,
+                                dateInt: String,
+                                tq: TrigramQuery,
+                                fingerprints: Set[Long],
+                                startTs: Long,
+                                endTs: Long,
+                                frequencyToUse: Long
+                              ): List[SegmentInfo] = {
     var connection: Connection = null
     var statement: PreparedStatement = null
     var resultSet: ResultSet = null
@@ -862,15 +862,19 @@ class QueryEngineV2(
           |  AND s.dateint      = ?       -- dateint
           |  AND s.fingerprints && ?::BIGINT[]
           |  AND t.fp           = ANY(?::BIGINT[])
+          |  AND ts_range && int8range(?, ?, '[)')
           |""".stripMargin
-      logger.info("Issuing query to fetch segments: " + query)
+      logger.info("Issuing query to fetch segments: " + query + " for customerId: " + customerId + ", dateInt: " + dateInt + ", fingerprints: " + fingerprints.mkString(", ")
+        + "startTs: " + startTs + ", endTs: " + endTs + ", frequencyToUse: " + frequencyToUse)
       statement = connection.prepareStatement(query)
 
-      logger.info(s"Query = $dateInt, customerId = $customerId, fingerprints = ${fingerprints.mkString(", ")}")
+//      logger.info(s"Query = $dateInt, customerId = $customerId, fingerprints = ${fingerprints.mkString(", ")}")
       statement.setObject(1, UUID.fromString(customerId))
       statement.setInt(2, dateInt.toInt)
       statement.setArray(3, connection.createArrayOf("BIGINT", fingerprints.map(Long.box).toArray))
       statement.setArray(4, connection.createArrayOf("BIGINT", fingerprints.map(Long.box).toArray))
+      statement.setLong(5, startTs)
+      statement.setLong(6, endTs)
 
       resultSet = statement.executeQuery()
       val segmentInfoMap = new mutable.HashMap[String, SegmentInfo]()
