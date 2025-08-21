@@ -56,7 +56,7 @@ object KubernetesWatcher {
     val current = new AtomicReference[Set[Pod]](Set.empty)
 
     val (queue, source) =
-      Source.queue[ClusterState](64, OverflowStrategy.dropHead)
+      Source.queue[ClusterState](64, OverflowStrategy.backpressure)
         .toMat(BroadcastHub.sink)(Keep.both)
         .run()
 
@@ -100,16 +100,11 @@ object KubernetesWatcher {
 
     /** Remove any entry with the same IP, then (optionally) add the new one. */
     def upsert(p: K8sPod): Unit = {
-      val candidate = asDiscovered(p)
+      val ipOpt     = podIp(p)                    // often present even when NotReady
+      val candidate = asDiscovered(p)             // Some if Ready, None if not
       updateSet { s =>
-        val withoutSameIp = candidate match {
-          case Some(Pod(ip)) => s.filterNot(_.ip == ip)
-          case None          => s
-        }
-        candidate match {
-          case Some(pod) => withoutSameIp + pod
-          case None      => withoutSameIp
-        }
+        val withoutIp = ipOpt.map(ip => s.filterNot(_.ip == ip)).getOrElse(s)
+        candidate.fold(withoutIp)(pod => withoutIp + pod)
       }
     }
 
@@ -127,7 +122,10 @@ object KubernetesWatcher {
     // ---------- informer (namespaced + server-side label selector) ----------
     val handler = new ResourceEventHandler[K8sPod] {
       override def onAdd(obj: K8sPod): Unit = upsert(obj)
-      override def onUpdate(oldObj: K8sPod, newObj: K8sPod): Unit = upsert(newObj)
+      override def onUpdate(oldObj: K8sPod, newObj: K8sPod): Unit = {
+        remove(oldObj)
+        upsert(newObj)
+      }
       override def onDelete(obj: K8sPod, deletedFinalStateUnknown: Boolean): Unit = remove(obj)
     }
 

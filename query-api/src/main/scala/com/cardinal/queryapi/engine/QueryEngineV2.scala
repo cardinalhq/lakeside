@@ -844,17 +844,23 @@ class QueryEngineV2(
       val start = System.currentTimeMillis()
       connection = DBDataSources.getLRDBSource.getConnection
       connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE)
-      val segmentIdColumn = if (baseExpr.dataset == METRICS) "timebox" else "segment_id"
+      val segmentIdColumn = "segment_id"
+      var tableName = ""
+      if(baseExpr.dataset == LOGS) {
+         tableName = "log_seg"
+      } else {
+        tableName = "trace_seg"
+      }
 
       val query =
-        """
+        s"""
           |SELECT
           |  t.fp                    AS fingerprint,
           |  s.instance_num,
           |  s.segment_id,
           |  lower(s.ts_range)       AS start_ts,
           |  upper(s.ts_range) - 1   AS end_ts
-          |FROM log_seg AS s
+          |FROM $tableName AS s
           |  CROSS JOIN LATERAL
           |    unnest(s.fingerprints) AS t(fp)
           |WHERE

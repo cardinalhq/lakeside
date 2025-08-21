@@ -28,17 +28,16 @@ import akka.{Done, NotUsed}
 import com.cardinal.utils.Commons._
 import org.slf4j.LoggerFactory
 
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.collection.mutable
 import scala.concurrent.duration.{Deadline, Duration, DurationInt, MILLISECONDS}
 import scala.concurrent.{ExecutionContextExecutor, Future}
 
 class WorkerManager(watcher: Source[ClusterState, NotUsed],
-                     minWorkers: Int,
-                     maxWorkers: Int,
-                     scaler: ClusterScaler,
-                     isLegacyMode: Boolean = false
+                    minWorkers: Int,
+                    maxWorkers: Int,
+                    scaler: ClusterScaler,
+                    isLegacyMode: Boolean = false
                    )(implicit system: ActorSystem, mat: Materializer) {
 
   private implicit val ec: ExecutionContextExecutor = system.dispatcher
@@ -150,14 +149,10 @@ class WorkerManager(watcher: Source[ClusterState, NotUsed],
   /** Hash/affinity lookup -> heartbeating worker, if any. */
   def getWorkerFor(key: String): Option[Pod] = {
     val intToPod = podsBySlotId.get()
-    if(intToPod.isEmpty) {
-      return None
-    }
-    val slotId = Math.abs(key.hashCode) % podCount
-    intToPod.get(slotId) match {
-      case Some(pod) if readyPods.get().contains(pod) => Some(pod)
-      case _ => None
-    }
+    val n = podCount
+    if (n == 0 || intToPod == null || intToPod.isEmpty) return None
+    val slotId = Math.floorMod(key.hashCode, n)
+    intToPod.get(slotId).filter(readyPods.get().contains)
   }
 
   // -------------------- Heartbeat wiring (SSE) --------------------
@@ -173,16 +168,15 @@ class WorkerManager(watcher: Source[ClusterState, NotUsed],
    */
   private def startHeartBeatingWithQueryWorker(pod: Pod)
                                               (implicit system: ActorSystem, mat: Materializer): Future[Done] = {
-    val ip = pod.ip
+    val ip   = pod.ip
     val port = QUERY_WORKER_PORT
-    val uri = s"http://${hostForUrl(ip)}:$port$QUERY_WORKER_HEARTBEAT"
-    val req = HttpRequest(uri = uri)
-    val deadline = Deadline.now + 1.minute
+    val uri  = s"http://${hostForUrl(ip)}:$port$QUERY_WORKER_HEARTBEAT"
+    val req  = HttpRequest(uri = uri)
 
     logger.info(s"Discovered new query worker at $ip, attempting heartbeat")
 
-    // One-shot attempt that completes when the first SSE event is seen
-    def attemptOnce(): Future[Unit] =
+    // Connect once and mark ready on first event
+    def connectOnce(): Future[Unit] =
       Http().singleRequest(req).flatMap { resp =>
         resp.entity.dataBytes
           .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
@@ -190,37 +184,40 @@ class WorkerManager(watcher: Source[ClusterState, NotUsed],
           .take(1)
           .runWith(Sink.head)
           .map { _ =>
-            // mark ready on *first* event only
             readyPods.updateAndGet(_ + pod)
             logger.info(s"Heartbeat established for $ip")
           }
       }
 
-    // Retry until deadline is exceeded
-    def retryInitial(): Future[Unit] =
-      attemptOnce().recoverWith {
-        case _ if deadline.hasTimeLeft() =>
-          after(2.seconds, system.scheduler)(retryInitial())
-      }
-
-    // Keep the SSE stream open; removing from ready set when it terminates
-    def steadyStream(): Future[Done] =
+    // One continuous SSE session (until it ends)
+    def runSession(): Future[Done] =
       Http().singleRequest(req).flatMap { resp =>
         resp.entity.dataBytes
           .via(EventStreamParser(Int.MaxValue, Int.MaxValue))
-          .map(_ => ()) // ignore payload, presence is enough
+          .map(_ => ())
           .runWith(Sink.ignore)
       }
 
-    val flow: Future[Done] = retryInitial().flatMap(_ => steadyStream())
+    def loop(): Future[Done] = {
+      val deadline = Deadline.now + 1.minute
+      def retryInitial(): Future[Unit] =
+        connectOnce().recoverWith {
+          case _ if deadline.hasTimeLeft() => after(2.seconds, system.scheduler)(retryInitial())
+        }
 
-    flow.onComplete { _ =>
-      readyPods.updateAndGet(_ - pod)
-      logger.info(s"Heartbeat terminated for $ip, removed from readyPods")
-      // Optional: trigger replacement / scaling action here if desired
+      retryInitial().flatMap(_ => runSession()).transformWith { _ =>
+        // session ended; mark not ready and, if still discovered, try again
+        readyPods.updateAndGet(_ - pod)
+        if (currentPods.get().contains(pod)) {
+          after(2.seconds, system.scheduler)(loop())
+        } else {
+          logger.info(s"Heartbeat loop stopping for $ip (no longer discovered)")
+          Future.successful(Done)
+        }
+      }
     }
 
-    flow
+    loop()
   }
 }
 
