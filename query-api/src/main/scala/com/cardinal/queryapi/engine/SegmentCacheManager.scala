@@ -23,13 +23,14 @@ import akka.http.scaladsl.model._
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import com.cardinal.datastructures.EMA
-import com.cardinal.discovery.Pod
+import com.cardinal.discovery.{Pod, WorkerManager}
 import com.cardinal.model.query.common.SegmentInfo
-import com.cardinal.model.{DownloadSegmentRequest, Heartbeat, ScalingStatusMessage, SegmentRequest}
-import com.cardinal.queryapi.engine.SegmentCacheManager.{getWorkerFor, readyPodCount, timeOfLastQuery, toSegmentPathOnS3}
+import com.cardinal.model.{DownloadSegmentRequest, Heartbeat, SegmentRequest}
+import com.cardinal.queryapi.engine.SegmentCacheManager.{getWorkerFor, manager, readyPodCount, timeOfLastQuery, toSegmentPathOnS3}
 import com.cardinal.utils.Commons._
 import com.cardinal.utils.StreamUtils
 import com.netflix.atlas.json.Json
+import io.kubernetes.client.openapi.Configuration
 import org.slf4j.LoggerFactory
 
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
@@ -37,55 +38,32 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.ExecutionContextExecutor
 
 object SegmentCacheManager {
-  @volatile private var _actorSystem: Option[ActorSystem] = None
-  @volatile private var _materializer: Option[Materializer] = None
-  @volatile private var _executionContext: Option[ExecutionContextExecutor] = None
-  
-  def setActorSystem(system: ActorSystem): Unit = {
-    _actorSystem = Some(system)
-    _materializer = Some(Materializer(system))
-    _executionContext = Some(system.dispatcher)
-  }
-  
-  implicit def as: ActorSystem = _actorSystem.getOrElse(throw new IllegalStateException("ActorSystem not initialized"))
-  implicit def mat: Materializer = _materializer.getOrElse(throw new IllegalStateException("Materializer not initialized"))
-  implicit def ec: ExecutionContextExecutor = _executionContext.getOrElse(throw new IllegalStateException("ExecutionContext not initialized"))
+  implicit val as: ActorSystem = ActorSystem("SegmentCacheSystem")
+  implicit val mat: Materializer = Materializer(as)
+  implicit val ec: ExecutionContextExecutor = as.dispatcher
 
   private val metadataLookupTimes = new AtomicReference[EMA](new EMA(0.7))
   private val totalQueryTimes = new AtomicReference[EMA](new EMA(0.7))
   private val timeOfLastQuery = new AtomicLong(0)
+  private val client = io.kubernetes.client.util.Config.defaultClient
+  Configuration.setDefaultApiClient(client)
 
-  @volatile private var _heartbeatReceiver: Option[WorkerHeartbeatReceiver] = None
-  @volatile private var _workerManager: Option[com.cardinal.discovery.WorkerManager] = None
-  
-  def setHeartbeatReceiver(receiver: WorkerHeartbeatReceiver): Unit = {
-    _heartbeatReceiver = Some(receiver)
-  }
-  
-  def setWorkerManager(manager: com.cardinal.discovery.WorkerManager): Unit = {
-    _workerManager = Some(manager)
-  }
-  
-  def heartbeatReceiver: WorkerHeartbeatReceiver = {
-    _heartbeatReceiver.getOrElse(
-      throw new IllegalStateException("WorkerHeartbeatReceiver not initialized")
-    )
-  }
-  
-  def workerManager: com.cardinal.discovery.WorkerManager = {
-    _workerManager.getOrElse(
-      throw new IllegalStateException("WorkerManager not initialized")
-    )
+  private val manager = WorkerManager()
+
+  def waitUntilScaled(): Source[Heartbeat, NotUsed] = {
+    Source
+      .tick(0.seconds, 3.seconds, NotUsed)
+      .takeWhile(_ => !manager.isScaledUp)
+      .wireTap(_ => manager.recordQuery())
+      .map { _ =>
+        Heartbeat(`type` = "waiting_scale_up")
+      }
+      .mapMaterializedValue(_ => NotUsed)
   }
 
-  def waitUntilScaled(): Source[ScalingStatusMessage, NotUsed] = {
-    workerManager.recordQuery()
-    workerManager.waitForSufficientWorkers()
-  }
+  def getWorkerFor(segmentId: String): Option[Pod] = manager.getWorkerFor(segmentId)
 
-  def getWorkerFor(segmentId: String): Option[Pod] = heartbeatReceiver.getWorkerFor(segmentId)
-
-  def readyPodCount: Int = heartbeatReceiver.getReadyWorkerCount
+  def readyPodCount: Int = manager.podCount
 
   def toSegmentPathOnS3(
     bucketName: String,
@@ -115,6 +93,9 @@ class SegmentCacheManager()(implicit actorSystem: ActorSystem) {
   implicit val mat: akka.stream.Materializer = akka.stream.Materializer(actorSystem)
   private val logger = LoggerFactory.getLogger(getClass)
   private val CACHE_URI = "/api/internal/cacheSegments"
+  locally {
+    SegmentCacheManager.manager
+  }
 
   private val _downloadQueue = StreamUtils
     .blockingQueue[Seq[SegmentInfo]]("downloadQueue", 1024)

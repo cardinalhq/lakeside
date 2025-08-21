@@ -32,8 +32,7 @@ import com.cardinal.model.query.common.TagDataType
 import com.cardinal.model.query.pipeline.ComputeFunction
 import com.cardinal.queryapi.engine.QueryEngineV2.toRegionalCNames
 import com.cardinal.queryapi.engine.SegmentCacheManager.updateTotalQueryTime
-import com.cardinal.queryapi.engine.{QueryEngineV2, SegmentCacheManager, WorkerHeartbeatReceiver}
-import com.cardinal.model.WorkerHeartbeat
+import com.cardinal.queryapi.engine.{QueryEngineV2, SegmentCacheManager}
 import com.cardinal.utils.Commons
 import com.cardinal.utils.Commons._
 import com.cardinal.utils.ast.ASTUtils.{toASTInput, toBaseExpr, BinaryClause, Filter}
@@ -51,10 +50,8 @@ import scala.concurrent.duration.DurationInt
 
 @Component
 @DependsOn(Array("storageProfileCache"))
-class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2, workerHeartbeatReceiver: WorkerHeartbeatReceiver) extends AuthDirectives(actorSystem) {
+class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2) extends AuthDirectives(actorSystem) {
   private val logger = LoggerFactory.getLogger(getClass)
-  
-  SegmentCacheManager.setHeartbeatReceiver(workerHeartbeatReceiver)
 
   private def scopeTags: Route = {
     path("api" / "v1" / "scopeTags") {
@@ -361,33 +358,7 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
     }
   }
 
-  private def workerHeartbeat: Route = {
-    path("api" / "internal" / "worker" / "heartbeat") {
-      post {
-        headerValueByName("Authorization") { authHeader =>
-          val expectedToken = s"Bearer ${AuthToken.secretKey}"
-          if (authHeader == expectedToken) {
-            entity(as[String]) { payload =>
-              try {
-                val heartbeat = Json.decode[WorkerHeartbeat](payload)
-                workerHeartbeatReceiver.registerHeartbeat(heartbeat)
-                complete(StatusCodes.OK)
-              } catch {
-                case ex: Exception =>
-                  logger.warn(s"Invalid heartbeat payload: ${ex.getMessage}")
-                  complete(StatusCodes.BadRequest)
-              }
-            }
-          } else {
-            logger.warn(s"Invalid worker heartbeat token")
-            complete(StatusCodes.Unauthorized)
-          }
-        }
-      }
-    }
-  }
-
   override def routes: Route = {
-    graphApi ~ tagsApi ~ scopeTags ~ functionSpecs ~ healthy ~ cardinalityApi ~ workerHeartbeat
+    graphApi ~ tagsApi ~ scopeTags ~ functionSpecs ~ healthy ~ cardinalityApi
   }
 }

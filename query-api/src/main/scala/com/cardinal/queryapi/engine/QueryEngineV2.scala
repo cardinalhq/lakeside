@@ -750,7 +750,7 @@ class QueryEngineV2(
 
               val statement = connection.prepareStatement(query)
               val resultSet = statement.executeQuery()
-              //logger.info(s"Query = $query, customerId = ${request.customerId}, dateInt = $dateInt, frequency = $frequencyToUse")
+              logger.info(s"Metrics Metadata Query = $query, customerId = ${request.customerId}, dateInt = $dateInt, frequency = $frequencyToUse")
               while (resultSet.next()) {
                 val instanceNum = resultSet.getInt("instance_num")
                 val startTs = resultSet.getLong("start_ts")
@@ -759,25 +759,28 @@ class QueryEngineV2(
 
                 val (_, endHour) = Commons.toDateIntHour(endTs)
 
-                storageProfileCache.getStorageProfile(request.customerId, instanceNum).foreach { storageProfile =>
-                  segmentsResult += SegmentInfo(
-                    dateInt = dateInt,
-                    hour = endHour,
-                    segmentId = s"$segmentId",
-                    sealedStatus = true,
-                    startTs = startTs,
-                    endTs = endTs,
-                    frequency = frequencyToUse,
-                    exprId = baseExpr.id,
-                    dataset = baseExpr.dataset,
-                    customerId = request.customerId,
-                    bucketName = storageProfile.bucket,
-                    collectorId = storageProfile.collectorId.getOrElse(
-                      throw new IllegalArgumentException(
-                        s"No collectorId found while processing storage profile ${storageProfile.storageProfileId}"
+                storageProfileCache.getStorageProfile(request.customerId, instanceNum) match {
+                  case Some(storageProfile) =>
+                    segmentsResult += SegmentInfo(
+                      dateInt = dateInt,
+                      hour = endHour,
+                      segmentId = s"$segmentId",
+                      sealedStatus = true,
+                      startTs = startTs,
+                      endTs = endTs,
+                      frequency = frequencyToUse,
+                      exprId = baseExpr.id,
+                      dataset = baseExpr.dataset,
+                      customerId = request.customerId,
+                      bucketName = storageProfile.bucket,
+                      collectorId = storageProfile.collectorId.getOrElse(
+                        throw new IllegalArgumentException(
+                          s"No collectorId found while processing storage profile ${storageProfile.storageProfileId}"
+                        )
                       )
                     )
-                  )
+                  case None =>
+                    logger.warn(s"Storage profile not found for customerId: ${request.customerId}, instanceNum: $instanceNum")
                 }
               }
               val e = System.currentTimeMillis()
