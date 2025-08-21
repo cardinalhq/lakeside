@@ -750,7 +750,7 @@ class QueryEngineV2(
 
               val statement = connection.prepareStatement(query)
               val resultSet = statement.executeQuery()
-              //logger.info(s"Query = $query, customerId = ${request.customerId}, dateInt = $dateInt, frequency = $frequencyToUse")
+              logger.info(s"Metrics Metadata Query = $query, customerId = ${request.customerId}, dateInt = $dateInt, frequency = $frequencyToUse")
               while (resultSet.next()) {
                 val instanceNum = resultSet.getInt("instance_num")
                 val startTs = resultSet.getLong("start_ts")

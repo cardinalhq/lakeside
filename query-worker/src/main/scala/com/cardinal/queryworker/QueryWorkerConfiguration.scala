@@ -25,13 +25,13 @@ import org.springframework.context.annotation.{Bean, Configuration, Lazy}
 class QueryWorkerConfiguration(@Lazy private val actorSystem: ActorSystem) {
   private val logger = LoggerFactory.getLogger(getClass)
 
-  @Bean
-  def heartbeatClient(): HeartbeatClient = {
-    logger.info("Starting worker heartbeat client")
-    val heartbeatClient = new HeartbeatClient()(actorSystem)
-    heartbeatClient.startHeartbeating()
-    heartbeatClient
-  }
+//  @Bean
+//  def heartbeatClient(): HeartbeatClient = {
+//    logger.info("Starting worker heartbeat client")
+//    val heartbeatClient = new HeartbeatClient()(actorSystem)
+//    heartbeatClient.startHeartbeating()
+//    heartbeatClient
+//  }
 
   @Bean
   def config(): Config = {

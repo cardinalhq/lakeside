@@ -169,9 +169,9 @@ object Commons {
     }
     if (isRemote) {
       val blobStoreProvider = getBlobStoreProvider
-      s"$blobStoreProvider://$bucketName/db/$customerId/$collectorId/$dateInt/$dataset/$hour"
+      s"$blobStoreProvider://$bucketName/db/$customerId/default/$dateInt/$dataset/$hour"
     } else {
-      s"$FILE_STORE_MOUNT/$customerId/$collectorId/$dateInt/$dataset/$hour"
+      s"$FILE_STORE_MOUNT/$customerId/default/$dateInt/$dataset/$hour"
     }
   }
 
