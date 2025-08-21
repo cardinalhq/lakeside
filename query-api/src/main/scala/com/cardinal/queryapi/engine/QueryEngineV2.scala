@@ -862,15 +862,19 @@ class QueryEngineV2(
           |  AND s.dateint      = ?       -- dateint
           |  AND s.fingerprints && ?::BIGINT[]
           |  AND t.fp           = ANY(?::BIGINT[])
+          |  AND ts_range && int8range(?, ?, '[)')
           |""".stripMargin
-      logger.info("Issuing query to fetch segments: " + query)
+      logger.info("Issuing query to fetch segments: " + query + " for customerId: " + customerId + ", dateInt: " + dateInt + ", fingerprints: " + fingerprints.mkString(", ")
+        + "startTs: " + startTs + ", endTs: " + endTs + ", frequencyToUse: " + frequencyToUse)
       statement = connection.prepareStatement(query)
 
-      logger.info(s"Query = $dateInt, customerId = $customerId, fingerprints = ${fingerprints.mkString(", ")}")
+//      logger.info(s"Query = $dateInt, customerId = $customerId, fingerprints = ${fingerprints.mkString(", ")}")
       statement.setObject(1, UUID.fromString(customerId))
       statement.setInt(2, dateInt.toInt)
       statement.setArray(3, connection.createArrayOf("BIGINT", fingerprints.map(Long.box).toArray))
       statement.setArray(4, connection.createArrayOf("BIGINT", fingerprints.map(Long.box).toArray))
+      statement.setLong(5, startTs)
+      statement.setLong(6, endTs)
 
       resultSet = statement.executeQuery()
       val segmentInfoMap = new mutable.HashMap[String, SegmentInfo]()
