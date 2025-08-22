@@ -68,8 +68,8 @@ object Commons {
   private val SERVICE_NAME: String = s"$RESOURCE_PREFIX.service.name"
 
   private val TRACE_ID: String = s"$CARDINAL_HQ_PREFIX.span_trace_id"
-  val SPAN_NAME: String = s"$CARDINAL_HQ_PREFIX.span_name"
-  val SPAN_KIND: String = s"$CARDINAL_HQ_PREFIX.span_kind"
+  val SPAN_NAME: String = "span.name"
+  val SPAN_KIND: String = "span.kind"
   val config: Config = ConfigFactory.load()
   private val FILE_STORE_MOUNT: String = "./db"
   val CONFIG_DB: String = "config"
