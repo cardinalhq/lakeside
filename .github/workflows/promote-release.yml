@@ -3,147 +3,238 @@ name: Promote Release
 on:
   workflow_dispatch:
     inputs:
-      rc-tag:
-        type: string
+      rc_version:
+        description: 'Release candidate to promote (e.g., v1.2.3-rc1, v1.2.3-beta1, v1.2.3-hotfix)'
         required: true
-        description: "RC Docker tag to promote (e.g., v1.2.3-rc1)"
-      release-tag:
         type: string
-        required: true
-        description: "Final release tag (e.g., v1.2.3)"
-      create-release:
-        type: boolean
+      final_version:
+        description: 'Final version to create (leave empty to auto-derive from RC)'
         required: false
-        description: "Create GitHub release and git tag"
-        default: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  packages: write
 
 jobs:
-  promote-images:
+  validate:
+    runs-on: ubuntu-22.04
+    outputs:
+      major: ${{ steps.parse.outputs.major }}
+      minor: ${{ steps.parse.outputs.minor }}
+      patch: ${{ steps.parse.outputs.patch }}
+      final_version: ${{ steps.derive.outputs.final_version }}
+    steps:
+      - name: Validate inputs and auto-derive final version
+        id: derive
+        run: |
+          echo "Processing RC version: ${{ inputs.rc_version }}"
+
+          # Validate RC format (v1.2.3-suffix)
+          if [[ ! "${{ inputs.rc_version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[a-zA-Z0-9]+$ ]]; then
+            echo "ERROR: RC version must follow format: v1.2.3-suffix (e.g., v1.2.3-rc1, v1.2.3-beta1)"
+            exit 1
+          fi
+
+          # Auto-derive final version from RC if not provided
+          RC_BASE=$(echo "${{ inputs.rc_version }}" | sed 's/-[a-zA-Z0-9]*$//')
+
+          if [[ -n "${{ inputs.final_version }}" ]]; then
+            # User provided final version - validate it
+            FINAL_VERSION="${{ inputs.final_version }}"
+            if [[ ! "$FINAL_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: Final version must follow format: v1.2.3"
+              exit 1
+            fi
+
+            if [[ "$RC_BASE" != "$FINAL_VERSION" ]]; then
+              echo "ERROR: RC base version ($RC_BASE) must match final version ($FINAL_VERSION)"
+              exit 1
+            fi
+            echo "Using provided final version: $FINAL_VERSION"
+          else
+            # Auto-derive final version
+            FINAL_VERSION="$RC_BASE"
+            echo "Auto-derived final version: $FINAL_VERSION"
+          fi
+
+          # Set for later steps and output
+          echo "FINAL_VERSION=$FINAL_VERSION" >> $GITHUB_ENV
+          echo "final_version=$FINAL_VERSION" >> $GITHUB_OUTPUT
+          echo "Validation passed"
+
+      - name: Parse version components
+        id: parse
+        run: |
+          VERSION="$FINAL_VERSION"
+          # Remove 'v' prefix
+          VERSION_NUM=$(echo $VERSION | sed 's/^v//')
+
+          # Split into components
+          MAJOR=$(echo $VERSION_NUM | cut -d. -f1)
+          MINOR=$(echo $VERSION_NUM | cut -d. -f2)
+          PATCH=$(echo $VERSION_NUM | cut -d. -f3)
+
+          echo "major=$MAJOR" >> $GITHUB_OUTPUT
+          echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          echo "patch=$PATCH" >> $GITHUB_OUTPUT
+
+          echo "Version components: $MAJOR.$MINOR.$PATCH"
+
+  promote:
     runs-on:
       group: larger-runners
-    permissions:
-      id-token: write
-      contents: write
-
+    needs: validate
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Generate GitHub App Token
-        if: ${{ github.event.inputs.create-release == 'true' }}
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.GITHUB_APP_ID }}
-          private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           audience: sts.amazonaws.com
           role-to-assume: arn:aws:iam::${{ secrets.ECR_ACCOUNT_ID }}:role/${{ secrets.ECR_ROLE_NAME }}
-          aws-region: us-east-1
+          aws-region: ${{ secrets.ECR_REGISTRY_REGION }}
           role-session-name: GitHubActions
 
-      - name: Login to Public Amazon ECR
-        id: login-ecr-public
+      - name: Login to PUBLIC Amazon ECR
+        env:
+          AWS_REGION: us-east-1
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Promote RC to Release
-        env:
-          RC_TAG: ${{ github.event.inputs.rc-tag }}
-          RELEASE_TAG: ${{ github.event.inputs.release-tag }}
+      - name: Verify RC images exist
         run: |
-          echo "Promoting RC build to final release with shared fate"
-          echo "RC Tag: $RC_TAG"
-          echo "Release Tag: $RELEASE_TAG"
-          
-          # Verify RC images exist before promoting
           echo "Verifying RC images exist..."
-          docker buildx imagetools inspect public.ecr.aws/cardinalhq.io/lakerunner/query-api:$RC_TAG
-          docker buildx imagetools inspect public.ecr.aws/cardinalhq.io/lakerunner/query-worker:$RC_TAG
-          echo "RC images verified"
-          
-          # Promote query-api RC to release
-          echo "Promoting query-api RC to release..."
-          docker buildx imagetools create \
-            --tag public.ecr.aws/cardinalhq.io/lakerunner/query-api:$RELEASE_TAG \
-            public.ecr.aws/cardinalhq.io/lakerunner/query-api:$RC_TAG
-          echo "query-api promoted to release"
-          
-          # Promote query-worker RC to release
-          echo "Promoting query-worker RC to release..."
-          docker buildx imagetools create \
-            --tag public.ecr.aws/cardinalhq.io/lakerunner/query-worker:$RELEASE_TAG \
-            public.ecr.aws/cardinalhq.io/lakerunner/query-worker:$RC_TAG
-          echo "query-worker promoted to release"
+          docker buildx imagetools inspect public.ecr.aws/cardinalhq.io/lakerunner/query-api:${{ inputs.rc_version }}
+          docker buildx imagetools inspect public.ecr.aws/cardinalhq.io/lakerunner/query-worker:${{ inputs.rc_version }}
+          echo "RC images found"
 
-      - name: Verify release promotion
-        env:
-          RELEASE_TAG: ${{ github.event.inputs.release-tag }}
+      - name: Promote RC to production tags
         run: |
-          echo "Verifying both services were promoted successfully to release: $RELEASE_TAG"
-          
-          # Verify query-api release
-          docker buildx imagetools inspect public.ecr.aws/cardinalhq.io/lakerunner/query-api:$RELEASE_TAG
-          echo "query-api:$RELEASE_TAG verified"
-          
-          # Verify query-worker release
-          docker buildx imagetools inspect public.ecr.aws/cardinalhq.io/lakerunner/query-worker:$RELEASE_TAG
-          echo "query-worker:$RELEASE_TAG verified"
-          
-          echo "Both query services promoted from RC to release with shared fate!"
-          echo "RC: ${{ github.event.inputs.rc-tag }}"
-          echo "Release: $RELEASE_TAG"
+          echo "Promoting ${{ inputs.rc_version }} to production tags..."
+
+          # Promote query-api
+          RC_IMAGE_API="public.ecr.aws/cardinalhq.io/lakerunner/query-api:${{ inputs.rc_version }}"
+
+          # Tag with exact version
+          FINAL_TAG_API="public.ecr.aws/cardinalhq.io/lakerunner/query-api:${{ needs.validate.outputs.final_version }}"
+          echo "Creating tag: $FINAL_TAG_API"
+          docker buildx imagetools create --tag $FINAL_TAG_API $RC_IMAGE_API
+
+          # Tag with minor version (v1.2)
+          MINOR_TAG_API="public.ecr.aws/cardinalhq.io/lakerunner/query-api:v${{ needs.validate.outputs.major }}.${{ needs.validate.outputs.minor }}"
+          echo "Creating tag: $MINOR_TAG_API"
+          docker buildx imagetools create --tag $MINOR_TAG_API $RC_IMAGE_API
+
+          # Tag with major version (v1)
+          MAJOR_TAG_API="public.ecr.aws/cardinalhq.io/lakerunner/query-api:v${{ needs.validate.outputs.major }}"
+          echo "Creating tag: $MAJOR_TAG_API"
+          docker buildx imagetools create --tag $MAJOR_TAG_API $RC_IMAGE_API
+
+          # Promote query-worker
+          RC_IMAGE_WORKER="public.ecr.aws/cardinalhq.io/lakerunner/query-worker:${{ inputs.rc_version }}"
+
+          # Tag with exact version
+          FINAL_TAG_WORKER="public.ecr.aws/cardinalhq.io/lakerunner/query-worker:${{ needs.validate.outputs.final_version }}"
+          echo "Creating tag: $FINAL_TAG_WORKER"
+          docker buildx imagetools create --tag $FINAL_TAG_WORKER $RC_IMAGE_WORKER
+
+          # Tag with minor version (v1.2)
+          MINOR_TAG_WORKER="public.ecr.aws/cardinalhq.io/lakerunner/query-worker:v${{ needs.validate.outputs.major }}.${{ needs.validate.outputs.minor }}"
+          echo "Creating tag: $MINOR_TAG_WORKER"
+          docker buildx imagetools create --tag $MINOR_TAG_WORKER $RC_IMAGE_WORKER
+
+          # Tag with major version (v1)
+          MAJOR_TAG_WORKER="public.ecr.aws/cardinalhq.io/lakerunner/query-worker:v${{ needs.validate.outputs.major }}"
+          echo "Creating tag: $MAJOR_TAG_WORKER"
+          docker buildx imagetools create --tag $MAJOR_TAG_WORKER $RC_IMAGE_WORKER
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Create Git tag
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          # Use GitHub App token that can bypass tag protection
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Create and push Git tag
-        if: ${{ github.event.inputs.create-release == 'true' }}
         run: |
+          echo "Creating Git tag for ${{ needs.validate.outputs.final_version }}"
+
+          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ github.event.inputs.release-tag }}
-          git push origin ${{ github.event.inputs.release-tag }}
+
+          # Create tag
+          git tag ${{ needs.validate.outputs.final_version }}
+          git push origin ${{ needs.validate.outputs.final_version }}
+
+          echo "Git tag created and pushed"
+
+      - name: Update stable tags
+        run: |
+          echo "Updating stable tags to point to ${{ needs.validate.outputs.final_version }}"
+
+          RC_IMAGE_API="public.ecr.aws/cardinalhq.io/lakerunner/query-api:${{ inputs.rc_version }}"
+          RC_IMAGE_WORKER="public.ecr.aws/cardinalhq.io/lakerunner/query-worker:${{ inputs.rc_version }}"
+
+          STABLE_TAG_API="public.ecr.aws/cardinalhq.io/lakerunner/query-api:stable"
+          STABLE_TAG_WORKER="public.ecr.aws/cardinalhq.io/lakerunner/query-worker:stable"
+
+          docker buildx imagetools create --tag $STABLE_TAG_API $RC_IMAGE_API
+          docker buildx imagetools create --tag $STABLE_TAG_WORKER $RC_IMAGE_WORKER
+          echo "Stable tags updated"
 
       - name: Create GitHub Release
-        if: ${{ github.event.inputs.create-release == 'true' }}
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          # Generate release notes
+          echo "Creating GitHub release for ${{ needs.validate.outputs.final_version }}"
+
+          # Generate release notes from commits since last release
           LAST_RELEASE=$(gh release list --limit 1 --exclude-pre-releases --json tagName --jq '.[0].tagName' || echo "")
-          
+
           if [ -n "$LAST_RELEASE" ]; then
-            RELEASE_NOTES="## Query Services Release ${{ github.event.inputs.release-tag }}
-
-          Promoted from RC: ${{ github.event.inputs.rc-tag }}
-
-          ## Changes since $LAST_RELEASE
-          
-          $(git log --pretty=format:"- %s" $LAST_RELEASE..HEAD)
-
-          ## Docker Images
-          - \`cardinalhq.io/lakerunner/query-api:${{ github.event.inputs.release-tag }}\`
-          - \`cardinalhq.io/lakerunner/query-worker:${{ github.event.inputs.release-tag }}\`"
+            RELEASE_NOTES="## Changes since $LAST_RELEASE"\n\n'
+            RELEASE_NOTES+=$(git log --oneline ${LAST_RELEASE}..HEAD --no-merges | sed 's/^/* /')
           else
-            RELEASE_NOTES="## Query Services Release ${{ github.event.inputs.release-tag }}
-          
-          Promoted from RC: ${{ github.event.inputs.rc-tag }}
-
-          This release includes both cardinalhq.io/lakerunner/query-api and cardinalhq.io/lakerunner/query-worker images with shared fate.
-
-          ## Docker Images
-          - \`cardinalhq.io/lakerunner/query-api:${{ github.event.inputs.release-tag }}\`
-          - \`cardinalhq.io/lakerunner/query-worker:${{ github.event.inputs.release-tag }}\`"
+            RELEASE_NOTES="## Changes"\n\n'
+            RELEASE_NOTES+=$(git log --oneline --no-merges | head -10 | sed 's/^/* /')
           fi
-          
+
           # Create the release
-          gh release create ${{ github.event.inputs.release-tag }} \
-            --title "Query Services Release ${{ github.event.inputs.release-tag }}" \
+          gh release create ${{ needs.validate.outputs.final_version }} \
+            --title "Release ${{ needs.validate.outputs.final_version }}" \
             --notes "$RELEASE_NOTES" \
             --latest
+
+          echo "GitHub release created: ${{ needs.validate.outputs.final_version }}"
+
+      - name: Summary
+        run: |
+          echo "Release promotion completed successfully!"
+          echo ""
+          echo "Available tags for query-api:"
+          echo "  • public.ecr.aws/cardinalhq.io/lakerunner/query-api:${{ needs.validate.outputs.final_version }}"
+          echo "  • public.ecr.aws/cardinalhq.io/lakerunner/query-api:v${{ needs.validate.outputs.major }}.${{ needs.validate.outputs.minor }}"
+          echo "  • public.ecr.aws/cardinalhq.io/lakerunner/query-api:v${{ needs.validate.outputs.major }}"
+          echo "  • public.ecr.aws/cardinalhq.io/lakerunner/query-api:stable"
+          echo ""
+          echo "Available tags for query-worker:"
+          echo "  • public.ecr.aws/cardinalhq.io/lakerunner/query-worker:${{ needs.validate.outputs.final_version }}"
+          echo "  • public.ecr.aws/cardinalhq.io/lakerunner/query-worker:v${{ needs.validate.outputs.major }}.${{ needs.validate.outputs.minor }}"
+          echo "  • public.ecr.aws/cardinalhq.io/lakerunner/query-worker:v${{ needs.validate.outputs.major }}"
+          echo "  • public.ecr.aws/cardinalhq.io/lakerunner/query-worker:stable"
+          echo ""
+          echo "Git tag: ${{ needs.validate.outputs.final_version }}"
+          echo "GitHub release: https://github.com/${{ github.repository }}/releases/tag/${{ needs.validate.outputs.final_version }}"
+          echo ""
+          echo "Ready for production deployment!"
