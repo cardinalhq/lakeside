@@ -44,7 +44,7 @@ object Commons {
   val PARALLELISM: Int = 10
   val NAME: String = s"$CARDINAL_HQ_PREFIX.name"
   val LOGS: String = "logs"
-  val SPANS: String = "spans"
+  val TRACES: String = "traces"
   val METRICS: String = "metrics"
   val METRIC_TYPE_RATE: String = "rate"
   val METRIC_TYPE_COUNTER: String = "count"

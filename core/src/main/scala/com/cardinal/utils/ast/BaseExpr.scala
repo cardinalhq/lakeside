@@ -209,7 +209,7 @@ object BaseExpr {
     val projectionSql = baseExpr.dataset match {
       case LOGS    => LOGS_PROJECTIONS
       case METRICS => METRICS_PROJECTIONS_WITH_VALUE
-      case SPANS   => SPANS_PROJECTIONS
+      case TRACES   => SPANS_PROJECTIONS
       case _       => throw new IllegalArgumentException(s"Invalid dataset: ${baseExpr.dataset}")
     }
     var sqlStr = s"SELECT * FROM {tableName} WHERE $timestampSql".trim
@@ -565,7 +565,7 @@ case class BaseExpr(
   }
 
   def isEventTelemetryType: Boolean = {
-    dataset == LOGS || dataset == SPANS
+    dataset == LOGS || dataset == TRACES
   }
 
   private val extractorStage = extractor.map { logExtractor =>

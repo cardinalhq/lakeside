@@ -230,7 +230,7 @@ object ASTUtils {
 
     def rollupAggregation(dataSetType: String): Option[String] = {
       dataSetType match {
-        case LOGS | SPANS => None
+        case LOGS | TRACES => None
         case _ =>
           rollupAggregation.get match {
             case r =>
