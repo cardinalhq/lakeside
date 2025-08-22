@@ -130,7 +130,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: query-services-build-artifacts
-          path: /
+          path: .
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
