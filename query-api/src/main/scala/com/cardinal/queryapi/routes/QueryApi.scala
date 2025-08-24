@@ -357,8 +357,9 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
       complete(HttpEntity(ContentTypes.`application/json`, ByteString(Json.encode(ComputeFunction.getSpecs))))
     }
   }
+
   private def metricsMetadataApi: Route = {
-    path("api" / "v1" / "metrics-metadata") {
+    path("api" / "v1" / "metricMetadata") {
       get {
         auth { customerId =>
           try {
@@ -373,6 +374,7 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
       }
     }
   }
+
   override def routes: Route = {
     graphApi ~ tagsApi ~ scopeTags ~ functionSpecs ~ healthy ~ cardinalityApi ~ metricsMetadataApi
   }

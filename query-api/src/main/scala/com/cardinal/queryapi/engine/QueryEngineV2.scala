@@ -948,8 +948,6 @@ class QueryEngineV2(
         |  attributes->>'metric.type' AS metric_type
         |FROM exemplar_metrics
         |WHERE organization_id = ?
-        |  AND attributes ? 'metric.name'
-        |  AND attributes ? 'metric.type'
         |ORDER BY 1 ASC
     """.stripMargin
 
