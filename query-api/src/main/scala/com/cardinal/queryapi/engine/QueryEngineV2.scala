@@ -756,9 +756,8 @@ class QueryEngineV2(
               statement.setLong(2, endTs)
               statement.setInt(3, dateInt.toInt)
               statement.setArray(4, connection.createArrayOf("BIGINT", fingerprints.map(Long.box).toArray))
-              statement.setArray(5, connection.createArrayOf("BIGINT", fingerprints.map(Long.box).toArray))
-              statement.setLong(6, frequencyToUse)
-              statement.setObject(7, UUID.fromString(request.customerId))
+              statement.setLong(5, frequencyToUse)
+              statement.setObject(6, UUID.fromString(request.customerId))
               val resultSet = statement.executeQuery()
               logger.info(s"Metrics Metadata Query = $query, customerId = ${request.customerId}, dateInt = $dateInt, frequency = $frequencyToUse")
               while (resultSet.next()) {
