@@ -950,6 +950,43 @@ class QueryEngineV2(
       if (connection != null) connection.close()
     }
   }
+  def loadExemplarMetricsMetadataJson(orgId: String): String = {
+    val sql =
+      """
+        |SELECT DISTINCT
+        |  attributes->>'metric.name' AS metric_name,
+        |  attributes->>'metric.type' AS metric_type
+        |FROM exemplar_metrics
+        |WHERE organization_id = ?
+        |ORDER BY 1 ASC
+    """.stripMargin
+
+    var connection: Connection      = null
+    var preparedStatement: PreparedStatement = null
+    var resultSet: ResultSet         = null
+    val rows = scala.collection.mutable.ListBuffer.empty[Map[String, String]]
+
+    try {
+      connection = DBDataSources.getLRDBSource.getConnection
+      connection.setReadOnly(true)
+      preparedStatement = connection.prepareStatement(sql)
+      preparedStatement.setFetchSize(500)
+      preparedStatement.setObject(1, UUID.fromString(orgId))
+
+      resultSet = preparedStatement.executeQuery()
+      while (resultSet.next()) {
+        rows += Map(
+          "metricName" -> resultSet.getString("metric_name"),
+          "metricType" -> Option(resultSet.getString("metric_type")).getOrElse("gauge")
+        )
+      }
+      Json.encode(rows.toList)
+    } finally {
+      if (resultSet != null) resultSet.close()
+      if (preparedStatement != null) preparedStatement.close()
+      if (connection != null) connection.close()
+    }
+  }
 
   private def checkShouldReverseSort(baseExpr: BaseExpr): Boolean = {
     baseExpr.order.getOrElse(DESCENDING) == DESCENDING

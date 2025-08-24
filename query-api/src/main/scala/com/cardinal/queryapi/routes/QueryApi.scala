@@ -358,7 +358,24 @@ class QueryApi @Autowired()(actorSystem: ActorSystem, queryEngine: QueryEngineV2
     }
   }
 
+  private def metricsMetadataApi: Route = {
+    path("api" / "v1" / "metricMetadata") {
+      get {
+        auth { customerId =>
+          try {
+            val json = queryEngine.loadExemplarMetricsMetadataJson(customerId)
+            complete(HttpEntity(ContentTypes.`application/json`, ByteString(json)))
+          } catch {
+            case e: Exception =>
+              logger.error(s"[${customerId}] metrics-metadata error", e)
+              complete(HttpResponse(StatusCodes.InternalServerError, entity = e.getMessage))
+          }
+        }
+      }
+    }
+  }
+
   override def routes: Route = {
-    graphApi ~ tagsApi ~ scopeTags ~ functionSpecs ~ healthy ~ cardinalityApi
+    graphApi ~ tagsApi ~ scopeTags ~ functionSpecs ~ healthy ~ cardinalityApi ~ metricsMetadataApi
   }
 }
