@@ -565,7 +565,7 @@ class QueryEngineV2(
       endDateTime,
       customerId = customerId,
       queryId = queryId,
-      frequency = frequency.toMillis
+      frequency = frequency.toMillis,
     ).map { segments =>
         segmentCacheManager.enqueueCacheRequest(segments) // asynchronously cache segments
         segments
@@ -702,7 +702,7 @@ class QueryEngineV2(
     endDateTime: Long,
     customerId: String,
     queryId: String,
-    frequency: Long
+    frequency: Long,
   ): Source[List[SegmentInfo], NotUsed] = {
     val startTs = startDateTime
     val endTs = endDateTime
@@ -736,19 +736,30 @@ class QueryEngineV2(
           val segmentsResult = Set.newBuilder[SegmentInfo]
           baseExpressions.foreach { baseExpr =>
             val frequencyToUse = request.frequency
+            val (tq, fingerprints) = trigramsQueriesByBaseExpr(baseExpr)
+
             if (baseExpr.dataset == METRICS) {
+
               val startTs = request.startTs
               val endTs = request.endTs
               val query = s"SELECT instance_num, segment_id, lower(ts_range) AS start_ts, upper(ts_range) - 1 AS end_ts FROM metric_seg" +
-                s" WHERE ts_range && int8range($startTs, $endTs, '[)')" +
-                s" AND dateint = $dateInt" +
-                s" AND frequency_ms = $frequencyToUse" +
-                s" AND organization_id = '${request.customerId}'" +
+                s" WHERE ts_range && int8range(?, ?, '[)')" +
+                s" AND dateint = ?" +
+                s" AND s.fingerprints && ?::BIGINT[]" +
+                s" AND t.fp           = ANY(?::BIGINT[])" +
+                s" AND frequency_ms = ?" +
+                s" AND organization_id = ?" +
                 s" AND published = true"
               val s = System.currentTimeMillis()
               val connection = DBDataSources.getLRDBSource.getConnection
-
               val statement = connection.prepareStatement(query)
+              statement.setLong(1, startTs)
+              statement.setLong(2, endTs)
+              statement.setInt(3, dateInt.toInt)
+              statement.setArray(4, connection.createArrayOf("BIGINT", fingerprints.map(Long.box).toArray))
+              statement.setArray(5, connection.createArrayOf("BIGINT", fingerprints.map(Long.box).toArray))
+              statement.setLong(6, frequencyToUse)
+              statement.setObject(7, UUID.fromString(request.customerId))
               val resultSet = statement.executeQuery()
               logger.info(s"Metrics Metadata Query = $query, customerId = ${request.customerId}, dateInt = $dateInt, frequency = $frequencyToUse")
               while (resultSet.next()) {
@@ -796,7 +807,6 @@ class QueryEngineV2(
                 })
 
               logger.info(s"BaseExpr: ${Json.encode(baseExpr)}")
-              val (tq, fingerprints) = trigramsQueriesByBaseExpr(baseExpr)
               val start = System.currentTimeMillis()
               val futures = sortedHours.grouped(3).map { _ =>
                 Future {
