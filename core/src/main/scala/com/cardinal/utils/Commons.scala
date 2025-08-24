@@ -110,7 +110,7 @@ object Commons {
   val DIMENSIONS_TO_INDEX: List[String] =
     List[String](TELEMETRY_TYPE, NAME, LEVEL, TRACE_ID) ++ INFRA_DIMENSIONS
 
-  val INDEX_FULL_VALUE_DIMENSIONS: List[String] = List(RESOURCE_FILE)
+  val INDEX_FULL_VALUE_DIMENSIONS: List[String] = List(NAME, RESOURCE_FILE)
 
   def pushDownResponseOrdering(pushDownRequest: PushDownRequest): Ordering[Either[DataPoint, SketchInput]] =
     (x: Either[DataPoint, SketchInput], y: Either[DataPoint, SketchInput]) => {

@@ -565,7 +565,7 @@ class QueryEngineV2(
       endDateTime,
       customerId = customerId,
       queryId = queryId,
-      frequency = frequency.toMillis
+      frequency = frequency.toMillis,
     ).map { segments =>
         segmentCacheManager.enqueueCacheRequest(segments) // asynchronously cache segments
         segments
@@ -702,7 +702,7 @@ class QueryEngineV2(
     endDateTime: Long,
     customerId: String,
     queryId: String,
-    frequency: Long
+    frequency: Long,
   ): Source[List[SegmentInfo], NotUsed] = {
     val startTs = startDateTime
     val endTs = endDateTime
@@ -736,19 +736,28 @@ class QueryEngineV2(
           val segmentsResult = Set.newBuilder[SegmentInfo]
           baseExpressions.foreach { baseExpr =>
             val frequencyToUse = request.frequency
+            val (tq, fingerprints) = trigramsQueriesByBaseExpr(baseExpr)
+
             if (baseExpr.dataset == METRICS) {
+
               val startTs = request.startTs
               val endTs = request.endTs
               val query = s"SELECT instance_num, segment_id, lower(ts_range) AS start_ts, upper(ts_range) - 1 AS end_ts FROM metric_seg" +
-                s" WHERE ts_range && int8range($startTs, $endTs, '[)')" +
-                s" AND dateint = $dateInt" +
-                s" AND frequency_ms = $frequencyToUse" +
-                s" AND organization_id = '${request.customerId}'" +
+                s" WHERE ts_range && int8range(?, ?, '[)')" +
+                s" AND dateint = ?" +
+                s" AND fingerprints && ?::BIGINT[]" +
+                s" AND frequency_ms = ?" +
+                s" AND organization_id = ?" +
                 s" AND published = true"
               val s = System.currentTimeMillis()
               val connection = DBDataSources.getLRDBSource.getConnection
-
               val statement = connection.prepareStatement(query)
+              statement.setLong(1, startTs)
+              statement.setLong(2, endTs)
+              statement.setInt(3, dateInt.toInt)
+              statement.setArray(4, connection.createArrayOf("BIGINT", fingerprints.map(Long.box).toArray))
+              statement.setLong(5, frequencyToUse)
+              statement.setObject(6, UUID.fromString(request.customerId))
               val resultSet = statement.executeQuery()
               logger.info(s"Metrics Metadata Query = $query, customerId = ${request.customerId}, dateInt = $dateInt, frequency = $frequencyToUse")
               while (resultSet.next()) {
@@ -796,7 +805,6 @@ class QueryEngineV2(
                 })
 
               logger.info(s"BaseExpr: ${Json.encode(baseExpr)}")
-              val (tq, fingerprints) = trigramsQueriesByBaseExpr(baseExpr)
               val start = System.currentTimeMillis()
               val futures = sortedHours.grouped(3).map { _ =>
                 Future {
@@ -937,6 +945,43 @@ class QueryEngineV2(
     } finally {
       if (resultSet != null) resultSet.close()
       if (statement != null) statement.close()
+      if (connection != null) connection.close()
+    }
+  }
+  def loadExemplarMetricsMetadataJson(orgId: String): String = {
+    val sql =
+      """
+        |SELECT DISTINCT
+        |  attributes->>'metric.name' AS metric_name,
+        |  attributes->>'metric.type' AS metric_type
+        |FROM exemplar_metrics
+        |WHERE organization_id = ?
+        |ORDER BY 1 ASC
+    """.stripMargin
+
+    var connection: Connection      = null
+    var preparedStatement: PreparedStatement = null
+    var resultSet: ResultSet         = null
+    val rows = scala.collection.mutable.ListBuffer.empty[Map[String, String]]
+
+    try {
+      connection = DBDataSources.getLRDBSource.getConnection
+      connection.setReadOnly(true)
+      preparedStatement = connection.prepareStatement(sql)
+      preparedStatement.setFetchSize(500)
+      preparedStatement.setObject(1, UUID.fromString(orgId))
+
+      resultSet = preparedStatement.executeQuery()
+      while (resultSet.next()) {
+        rows += Map(
+          "metricName" -> resultSet.getString("metric_name"),
+          "metricType" -> Option(resultSet.getString("metric_type")).getOrElse("gauge")
+        )
+      }
+      Json.encode(rows.toList)
+    } finally {
+      if (resultSet != null) resultSet.close()
+      if (preparedStatement != null) preparedStatement.close()
       if (connection != null) connection.close()
     }
   }
