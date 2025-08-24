@@ -158,12 +158,16 @@ object DuckDbConnectionFactory {
         val creds    = credentialsCache.getCredentials(profile.role, profile.organizationId)
         var endpoint = profile.endpoint.filter(_.nonEmpty)
           .getOrElse(s"s3.${profile.region}.amazonaws.com")
-        val useSsl = profile.useSsl
+        var useSsl = true
 
-        if (!useSsl && endpoint.startsWith("http://")) {
-          endpoint = endpoint.stripPrefix("http://")
-        } else if (useSsl && endpoint.startsWith("https://")) {
-          endpoint = endpoint.stripPrefix("https://")
+        if(endpoint.nonEmpty) {
+          if (endpoint.startsWith("http://")) {
+            endpoint = endpoint.stripPrefix("http://")
+            useSsl = false
+          } else if (endpoint.startsWith("https://")) {
+            endpoint = endpoint.stripPrefix("https://")
+            useSsl = true
+          }
         }
 
         logger.debug(

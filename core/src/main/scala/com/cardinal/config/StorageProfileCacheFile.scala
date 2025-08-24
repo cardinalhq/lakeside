@@ -90,8 +90,7 @@ object StorageProfileCacheFile {
         spProperties = Map.empty,
         role = role,
         collectorType = 0,
-        endpoint = raw.endpoint,
-        useSsl = raw.useSsl.getOrElse(true)
+        endpoint = raw.endpoint
       )
     }
 }

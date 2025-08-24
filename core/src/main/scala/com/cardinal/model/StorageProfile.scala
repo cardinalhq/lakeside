@@ -29,6 +29,5 @@ case class StorageProfile(
   spProperties: Map[String, Object],
   role: String,
   collectorType: Int,
-  endpoint : Option[String],
-  useSsl: Boolean = true
+  endpoint : Option[String]
 )
