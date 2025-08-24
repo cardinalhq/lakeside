@@ -745,8 +745,7 @@ class QueryEngineV2(
               val query = s"SELECT instance_num, segment_id, lower(ts_range) AS start_ts, upper(ts_range) - 1 AS end_ts FROM metric_seg" +
                 s" WHERE ts_range && int8range(?, ?, '[)')" +
                 s" AND dateint = ?" +
-                s" AND s.fingerprints && ?::BIGINT[]" +
-                s" AND t.fp           = ANY(?::BIGINT[])" +
+                s" AND fingerprints && ?::BIGINT[]" +
                 s" AND frequency_ms = ?" +
                 s" AND organization_id = ?" +
                 s" AND published = true"
