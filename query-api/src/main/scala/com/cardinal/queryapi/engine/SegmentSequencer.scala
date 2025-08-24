@@ -27,44 +27,68 @@ import com.cardinal.utils.Commons.DEFAULT_CUSTOMER_ID
 import com.cardinal.utils.ast.SketchTags.{DD_SKETCH_TYPE, HLL_SKETCH_TYPE, MAP_SKETCH_TYPE}
 import com.cardinal.utils.ast.{BaseExpr, SketchInput, SketchTags}
 
-import java.util.Base64
-
 object SegmentSequencer {
   private val tsUri = "/api/internal/timeseries"
 
+  import scala.util.Try
+
+  private def asDouble(v: ujson.Value): Double = v match {
+    case ujson.Num(n) => n
+    case ujson.Str(s) =>
+      s match {
+        case "NaN" | "nan" => Double.NaN
+        case "Infinity" | "+Infinity" => Double.PositiveInfinity
+        case "-Infinity" => Double.NegativeInfinity
+        case other => Try(other.toDouble).getOrElse(Double.NaN)
+      }
+    case _ => Double.NaN
+  }
+
+  private def asLong(v: ujson.Value): Long = v match {
+    case ujson.Num(n) => n.toLong
+    case ujson.Str(s) => Try(s.toLong).getOrElse(0L)
+    case _ => 0L
+  }
+
   def allSources(
-    queryId: String,
-    baseExpr: BaseExpr,
-    segmentRequests: List[SegmentRequest],
-    segmentCacheManager: SegmentCacheManager,
-    reverseSort: Boolean = false,
-    isTagQuery: Boolean = false,
-    tagDataType: Option[TagDataType],
-    postPushDownProcessor: Option[PostPushDownProcessor] = None
-  )(implicit mat: Materializer): Seq[Source[Either[DataPoint, SketchInput], Any]] = {
+                  queryId: String,
+                  baseExpr: BaseExpr,
+                  segmentRequests: List[SegmentRequest],
+                  segmentCacheManager: SegmentCacheManager,
+                  reverseSort: Boolean = false,
+                  isTagQuery: Boolean = false,
+                  tagDataType: Option[TagDataType],
+                  postPushDownProcessor: Option[PostPushDownProcessor] = None
+                )(implicit mat: Materializer): Seq[Source[Either[DataPoint, SketchInput], Any]] = {
     val customerId = segmentRequests.headOption.map(_.customerId).getOrElse(DEFAULT_CUSTOMER_ID)
 
     def decode(baseExpr: BaseExpr, bs: ByteString): Either[DataPoint, SketchInput] = {
       val json = bs.utf8String
       val decoded = ujson.read(json).obj
+      val tags = decoded("tags").obj.map { case (k, v) => k -> v.str }.toMap
+
       decoded("type").str match {
         case "exemplar" =>
-          val timestamp = decoded("timestamp").num.toLong
-          val value = decoded("value").num
-          val tags = decoded("tags").obj.map(e => e._1 -> e._2.str).toMap
-          val point = DataPoint(timestamp = timestamp, value = value, tags = tags)
-          Left(point)
+          val timestamp = asLong(decoded("timestamp"))
+          val value = asDouble(decoded("value")) // <-- was .num
+          Left(DataPoint(timestamp = timestamp, value = value, tags = tags))
+
         case "sketch" =>
-          val timestamp = decoded("timestamp").num.toLong
-          val tags = decoded("tags").obj.map(e => e._1 -> e._2.str).toMap
+          val timestamp = asLong(decoded("timestamp"))
           val sketchType = decoded("sketchType").str
+
           val sketch = sketchType match {
             case HLL_SKETCH_TYPE | DD_SKETCH_TYPE =>
-              val sketchBytes = decoded("sketch").str
-              val bytes = Base64.getDecoder.decode(sketchBytes)
+              val b64 = decoded("sketch").str
+              val bytes = java.util.Base64.getDecoder.decode(b64)
               Left(bytes)
-            case MAP_SKETCH_TYPE => Right(decoded("sketch").obj.map(e => e._1 -> e._2.num).toMap)
+
+            case MAP_SKETCH_TYPE =>
+              // tolerate "NaN" etc for per-key values
+              val m = decoded("sketch").obj.map { case (k, v) => k -> asDouble(v) }.toMap
+              Right(m)
           }
+
           Right(
             SketchInput(
               customerId = customerId,
