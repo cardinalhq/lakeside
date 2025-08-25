@@ -529,7 +529,8 @@ class QueryEngineV2(
           tagDataType = None,
         )
 
-        mergeSortedSource(sources.toList, reverseSort = shouldReverseSort)
+        Source(sources)
+          .flatMapMerge(Int.MaxValue, source => source)
           .map {
             case Left(datapoint) =>
               Some(dataPointToGenericSSEPayload(id = baseExprId, datapoint = datapoint))
