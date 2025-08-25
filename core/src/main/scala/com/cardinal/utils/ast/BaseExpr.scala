@@ -235,7 +235,7 @@ object BaseExpr {
         sqlStr = s"SELECT * FROM ($sqlStr) WHERE $filterSqlString"
       } else {
         sqlStr = s"SELECT $projectionSql, * FROM ($sqlStr) WHERE $filterSqlString ORDER BY \"$TIMESTAMP\" ${baseExpr.order
-          .getOrElse(DESCENDING)}"
+          .getOrElse(DESCENDING)} LIMIT ${baseExpr.limit.getOrElse(1000)}"
       }
     }
     sqlStr
