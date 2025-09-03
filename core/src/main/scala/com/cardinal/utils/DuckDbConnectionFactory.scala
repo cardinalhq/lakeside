@@ -88,15 +88,32 @@ object DuckDbConnectionFactory {
         logger.info("Initializing new sealed read connection with provided bucket names.")
         val connection = createConnection("jdbc:duckdb:")
         val statement = connection.createStatement()
+        
+        logger.debug("Installing and loading DuckDB extensions...")
         statement.executeUpdate("INSTALL '/app/libs/httpfs.duckdb_extension'")
+        logger.debug("✓ Installed httpfs extension")
         statement.executeUpdate("LOAD httpfs")
+        logger.debug("✓ Loaded httpfs extension")
+        
         statement.executeUpdate("INSTALL '/app/libs/azure.duckdb_extension'")
+        logger.debug("✓ Installed azure extension")
         statement.executeUpdate("LOAD azure")
+        logger.debug("✓ Loaded azure extension")
+        
         statement.executeUpdate("SET azure_transport_option_type = 'curl'")
+        logger.info("✓ Set azure_transport_option_type = 'curl'")
+        
         statement.executeUpdate(s"SET memory_limit='${DUCKDB_MEMORY_LIMIT}'")
+        logger.debug(s"✓ Set memory_limit to ${DUCKDB_MEMORY_LIMIT}")
+        
         statement.executeUpdate("SET temp_directory = '/db/duckdb_swap'")
         statement.executeUpdate("SET max_temp_directory_size = '5GB'")
+        logger.debug("✓ Set temp directory settings")
+        
+        logger.info(s"About to configure credentials for buckets: ${bucketNames.mkString(", ")}")
         withS3Credentials(statement, bucketNames)
+        logger.info("✓ Completed credential configuration")
+        
         statement.close()
         val newExpirationTime = now.plusSeconds(4 * 60) // tokens should renew about 5 minutes before they expire, but this should be done differently
         val connectionWithExpiration = ExpiringConnection(connection, newExpirationTime)
@@ -164,29 +181,62 @@ object DuckDbConnectionFactory {
         """.stripMargin.trim
       } else if (isAzure) {
         logger.info(s"Taking AZURE path for ${profile.storageProfileId}")
+        logger.debug(s"Azure profile details: bucket=${profile.bucket}, endpoint=${profile.endpoint}, region=${profile.region}")
+        
         val storageAccount = extractStorageAccountFromEndpoint(profile.endpoint)
+        logger.info(s"Extracted storage account: '$storageAccount' from endpoint: ${profile.endpoint}")
         
         // Check for Azure service principal credentials in environment
         val azureClientId = sys.env.get("AZURE_CLIENT_ID")
         val azureClientSecret = sys.env.get("AZURE_CLIENT_SECRET") 
         val azureTenantId = sys.env.get("AZURE_TENANT_ID")
         
-        // Use credential_chain as primary method since it works better with DuckDB + curl transport
-        logger.info(
-          s"Creating Azure secret for ${profile.storageProfileId} using credential_chain " +
-            s"bucket=${profile.bucket}, storageAccount=$storageAccount"
-        )
+        logger.info(s"Azure environment variables check:")
+        logger.info(s"  AZURE_CLIENT_ID: ${azureClientId.map(id => s"${id.take(8)}...${id.takeRight(4)}").getOrElse("NOT SET")}")
+        logger.info(s"  AZURE_CLIENT_SECRET: ${azureClientSecret.map(_ => "SET (hidden)").getOrElse("NOT SET")}")
+        logger.info(s"  AZURE_TENANT_ID: ${azureTenantId.map(id => s"${id.take(8)}...${id.takeRight(4)}").getOrElse("NOT SET")}")
         
-        val sql = s"""
-           |CREATE OR REPLACE SECRET secret_$secretSuffix (
-           |  TYPE azure,
-           |  PROVIDER credential_chain,
-           |  ACCOUNT_NAME '$storageAccount',
-           |  SCOPE 'az://${profile.bucket}/'
-           |);
-          """.stripMargin.trim
+        val sql = (azureClientId, azureClientSecret, azureTenantId) match {
+          case (Some(clientId), Some(clientSecret), Some(tenantId)) =>
+            // Use explicit service principal credentials when available
+            logger.info(
+              s"✓ All Azure service principal credentials found - using service_principal provider " +
+                s"for ${profile.storageProfileId} bucket=${profile.bucket}, storageAccount=$storageAccount"
+            )
+            val generatedSql = s"""
+               |CREATE OR REPLACE SECRET secret_$secretSuffix (
+               |  TYPE azure,
+               |  PROVIDER service_principal,
+               |  TENANT_ID '$tenantId',
+               |  CLIENT_ID '$clientId',
+               |  CLIENT_SECRET '$clientSecret',
+               |  ACCOUNT_NAME '$storageAccount',
+               |  SCOPE 'az://${profile.bucket}/'
+               |);
+            """.stripMargin.trim
+            logger.info(s"Generated service_principal SQL for secret_$secretSuffix:")
+            logger.info(s"$generatedSql")
+            generatedSql
+          case _ =>
+            // Fallback to credential_chain if environment variables not available
+            logger.warn(
+              s"⚠ Missing Azure service principal credentials - falling back to credential_chain " +
+                s"for ${profile.storageProfileId} bucket=${profile.bucket}, storageAccount=$storageAccount"
+            )
+            val generatedSql = s"""
+               |CREATE OR REPLACE SECRET secret_$secretSuffix (
+               |  TYPE azure,
+               |  PROVIDER credential_chain,
+               |  ACCOUNT_NAME '$storageAccount',
+               |  SCOPE 'az://${profile.bucket}/'
+               |);
+            """.stripMargin.trim
+            logger.info(s"Generated credential_chain SQL for secret_$secretSuffix:")
+            logger.info(s"$generatedSql")
+            generatedSql
+        }
         
-        logger.info(s"Executing Azure secret SQL: $sql")
+        logger.info(s"About to execute Azure secret creation SQL for profile ${profile.storageProfileId}")
         sql
       } else {
         logger.info(s"Taking AWS/S3 path for ${profile.storageProfileId}")
@@ -241,20 +291,39 @@ object DuckDbConnectionFactory {
       }
 
       // now execute whichever you built
-      statement.execute(sql)
+      logger.info(s"Executing SQL statement for profile ${profile.storageProfileId}...")
+      try {
+        val result = statement.execute(sql)
+        logger.info(s"✓ Successfully executed secret creation SQL for profile ${profile.storageProfileId}, result: $result")
+      } catch {
+        case e: Exception =>
+          logger.error(s"✗ Failed to execute secret creation SQL for profile ${profile.storageProfileId}: ${e.getMessage}")
+          logger.error(s"Failed SQL was: $sql")
+          throw e
+      }
     }
     statement
   }
 
   private def extractStorageAccountFromEndpoint(endpoint: Option[String]): String = {
-    endpoint match {
+    logger.debug(s"Extracting storage account from endpoint: $endpoint")
+    
+    val result = endpoint match {
       case Some(ep) if ep.contains("blob.core.windows.net") =>
-        ep.split("\\.")(0).replace("https://", "").replace("http://", "")
+        val account = ep.split("\\.")(0).replace("https://", "").replace("http://", "")
+        logger.debug(s"Extracted storage account '$account' using blob.core.windows.net pattern from '$ep'")
+        account
       case Some(ep) => 
         // Fallback: try to extract from any endpoint format
-        ep.replace("https://", "").replace("http://", "").split("\\.")(0)
+        val account = ep.replace("https://", "").replace("http://", "").split("\\.")(0)
+        logger.debug(s"Extracted storage account '$account' using fallback pattern from '$ep'")
+        account
       case None => 
+        logger.error("Azure endpoint is None - cannot extract storage account")
         throw new RuntimeException("Azure endpoint required for storage account extraction")
     }
+    
+    logger.info(s"Final extracted storage account: '$result'")
+    result
   }
 }
