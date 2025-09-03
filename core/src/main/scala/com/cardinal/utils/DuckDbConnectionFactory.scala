@@ -21,7 +21,7 @@ import com.cardinal.auth.AwsCredentialsCache
 import com.cardinal.auth.AwsCredentialsCache.CREDENTIALS_VALIDITY_SECONDS
 import com.cardinal.config.StorageProfileCache
 import com.cardinal.core.Environment
-import com.cardinal.utils.Commons.STORAGE_PROFILE_CLOUD_PROVIDER_GOOGLE
+import com.cardinal.utils.Commons.{STORAGE_PROFILE_CLOUD_PROVIDER_GOOGLE, STORAGE_PROFILE_CLOUD_PROVIDER_AZURE}
 import org.duckdb.DuckDBConnection
 import org.slf4j.LoggerFactory
 
@@ -43,9 +43,9 @@ object DuckDbConnectionFactory {
 
   private val DUCKDB_MEMORY_LIMIT = sys.env.getOrElse("DUCKDB_MEMORY_LIMIT", "4GB")
 
-  installHttpfs()
+  installExtensions()
 
-  private def installHttpfs(): Unit = {
+  private def installExtensions(): Unit = {
     Try {
       Using.Manager { use =>
         // open the connection once
@@ -57,7 +57,8 @@ object DuckDbConnectionFactory {
 
         // list of commands to run
         val cmds = Seq(
-          "INSTALL '/app/libs/httpfs.duckdb_extension';"
+          "INSTALL '/app/libs/httpfs.duckdb_extension';",
+          "INSTALL '/app/libs/azure.duckdb_extension';"
         )
 
         // execute each, auto-closing the Statement
@@ -67,7 +68,7 @@ object DuckDbConnectionFactory {
         }
       }
     }.recover { case e =>
-      logger.error("Error installing httpfs", e)
+      logger.error("Error installing extensions", e)
     }
   }
 
@@ -89,6 +90,8 @@ object DuckDbConnectionFactory {
         val statement = connection.createStatement()
         statement.executeUpdate("INSTALL '/app/libs/httpfs.duckdb_extension'")
         statement.executeUpdate("LOAD httpfs")
+        statement.executeUpdate("INSTALL '/app/libs/azure.duckdb_extension'")
+        statement.executeUpdate("LOAD azure")
         statement.executeUpdate(s"SET memory_limit='${DUCKDB_MEMORY_LIMIT}'")
         statement.executeUpdate("SET temp_directory = '/db/duckdb_swap'")
         statement.executeUpdate("SET max_temp_directory_size = '5GB'")
@@ -141,6 +144,7 @@ object DuckDbConnectionFactory {
       val secretSuffix = profile.storageProfileId.replace("-", "_")
 
       val isGcp = profile.cloudProvider == STORAGE_PROFILE_CLOUD_PROVIDER_GOOGLE
+      val isAzure = profile.cloudProvider == STORAGE_PROFILE_CLOUD_PROVIDER_AZURE
 
       val sql = if (isGcp) {
         s"""
@@ -152,6 +156,23 @@ object DuckDbConnectionFactory {
            |  SECRET '$SECRET_ACCESS_KEY',
            |  REGION '${profile.region}',
            |  SCOPE 'gcs://${profile.bucket}'
+           |);
+        """.stripMargin.trim
+      } else if (isAzure) {
+        val storageAccount = extractStorageAccountFromEndpoint(profile.endpoint)
+        
+        logger.debug(
+          s"Creating Azure secret for ${profile.storageProfileId} " +
+            s"bucket=${profile.bucket}, region=${profile.region}, " +
+            s"storageAccount=$storageAccount"
+        )
+        
+        s"""
+           |CREATE OR REPLACE SECRET secret_$secretSuffix (
+           |  TYPE azure,
+           |  PROVIDER credential_chain,
+           |  ACCOUNT_NAME '$storageAccount',
+           |  SCOPE 'az://${profile.bucket}/'
            |);
         """.stripMargin.trim
       } else {
@@ -209,5 +230,17 @@ object DuckDbConnectionFactory {
       statement.execute(sql)
     }
     statement
+  }
+
+  private def extractStorageAccountFromEndpoint(endpoint: Option[String]): String = {
+    endpoint match {
+      case Some(ep) if ep.contains("blob.core.windows.net") =>
+        ep.split("\\.")(0).replace("https://", "").replace("http://", "")
+      case Some(ep) => 
+        // Fallback: try to extract from any endpoint format
+        ep.replace("https://", "").replace("http://", "").split("\\.")(0)
+      case None => 
+        throw new RuntimeException("Azure endpoint required for storage account extraction")
+    }
   }
 }

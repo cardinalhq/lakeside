@@ -30,6 +30,9 @@ COPY libs/${TARGETOS}-${TARGETARCH}/lib-trigram.so /app/libs/lib-trigram.so
 RUN curl -fsSL "https://extensions.duckdb.org/v1.3.2/${TARGETOS}_${TARGETARCH}/httpfs.duckdb_extension.gz" \
     | gunzip -c > /app/libs/httpfs.duckdb_extension
 
+RUN curl -fsSL "https://extensions.duckdb.org/v1.3.2/${TARGETOS}_${TARGETARCH}/azure.duckdb_extension.gz" \
+    | gunzip -c > /app/libs/azure.duckdb_extension
+
 ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar /app/libs/otel-javaagent.jar
 
 COPY libs/${TARGETOS}-${TARGETARCH}/lib-trigram.h /app/libs/lib-trigram.h

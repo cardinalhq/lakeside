@@ -18,7 +18,7 @@ package com.cardinal
 
 import akka.actor.ActorSystem
 import com.amazonaws.services.securitytoken.{AWSSecurityTokenService, AWSSecurityTokenServiceClientBuilder}
-import com.cardinal.auth.AwsCredentialsCache
+import com.cardinal.auth.{AwsCredentialsCache, AzureCredentialsCache}
 import com.cardinal.config.{StorageProfileCache, StorageProfileCacheControlPlane, StorageProfileCacheFile}
 import com.cardinal.core.Environment
 import com.cardinal.objectstorage._
@@ -81,6 +81,11 @@ class CoreConfiguration {
   @Bean
   def objectStoreAws(s3ClientCache: S3ClientCache): ObjectStore =
     new S3Store(s3ClientCache = s3ClientCache)
+
+  @Profile(Array("azure"))
+  @Bean
+  def objectStoreAzure(azureClientCache: AzureClientCache): ObjectStore =
+    new AzureStore(azureClientCache = azureClientCache)
 
   @Profile(Array("local"))
   @Bean
