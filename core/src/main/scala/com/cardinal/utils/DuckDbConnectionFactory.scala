@@ -167,10 +167,23 @@ object DuckDbConnectionFactory {
         logger.info(s"Taking AZURE path for ${profile.storageProfileId}")
         val storageAccount = extractStorageAccountFromEndpoint(profile.endpoint)
         
-        // Get Azure credentials from environment (DuckDB needs them directly)
-        val azureClientId = sys.env.get("AZURE_CLIENT_ID")
-        val azureClientSecret = sys.env.get("AZURE_CLIENT_SECRET") 
-        val azureTenantId = sys.env.get("AZURE_TENANT_ID")
+        // Get Azure credentials through cache (similar to AWS pattern)
+        logger.debug(s"Getting cached Azure credentials for storage account: $storageAccount")
+        val (azureClientId, azureClientSecret, azureTenantId) = try {
+          azureCredentialsCache.getDuckDbCredentials(storageAccount, profile.organizationId) match {
+            case Some((clientId, clientSecret, tenantId)) =>
+              logger.debug(s"✓ Using cached Azure credentials for $storageAccount")
+              (Some(clientId), Some(clientSecret), Some(tenantId))
+            case None =>
+              logger.debug("No cached Azure credentials found, this should not happen if env vars are set")
+              (None, None, None)
+          }
+        } catch {
+          case e: Exception =>
+            logger.warn(s"Failed to get Azure credentials from cache: ${e.getMessage}")
+            // Fallback to direct environment read
+            (sys.env.get("AZURE_CLIENT_ID"), sys.env.get("AZURE_CLIENT_SECRET"), sys.env.get("AZURE_TENANT_ID"))
+        }
         
         val sql = (azureClientId, azureClientSecret, azureTenantId) match {
           case (Some(clientId), Some(clientSecret), Some(tenantId)) =>
