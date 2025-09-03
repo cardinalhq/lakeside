@@ -186,7 +186,7 @@ object DuckDbConnectionFactory {
              |  CLIENT_ID '${azureClientId.get}',
              |  CLIENT_SECRET '${azureClientSecret.get}',
              |  ACCOUNT_NAME '$storageAccount',
-             |  SCOPE 'az://${profile.bucket}/'
+             |  SCOPE 'azure://${profile.bucket}/'
              |);
           """.stripMargin.trim
         } else {
@@ -200,7 +200,7 @@ object DuckDbConnectionFactory {
              |  TYPE azure,
              |  PROVIDER credential_chain,
              |  ACCOUNT_NAME '$storageAccount',
-             |  SCOPE 'az://${profile.bucket}/'
+             |  SCOPE 'azure://${profile.bucket}/'
              |);
           """.stripMargin.trim
         }
