@@ -136,7 +136,7 @@ object DuckDbConnectionFactory {
     }
 
     storageProfiles.foreach { profile =>
-      logger.debug(
+      logger.info(
         s"Building duckdb secret for storage profile: ${profile.storageProfileId} for" +
         s" cloud provider: ${profile.cloudProvider} bucket: ${profile.bucket}" +
         s" region: ${profile.region} role: ${profile.role}"
@@ -145,8 +145,11 @@ object DuckDbConnectionFactory {
 
       val isGcp = profile.cloudProvider == STORAGE_PROFILE_CLOUD_PROVIDER_GOOGLE
       val isAzure = profile.cloudProvider == STORAGE_PROFILE_CLOUD_PROVIDER_AZURE
+      
+      logger.info(s"Profile ${profile.storageProfileId}: isGcp=$isGcp, isAzure=$isAzure, cloudProvider='${profile.cloudProvider}'")
 
       val sql = if (isGcp) {
+        logger.info(s"Taking GCP path for ${profile.storageProfileId}")
         s"""
            |CREATE OR REPLACE SECRET secret_$secretSuffix (
            |  TYPE GCS,
@@ -159,23 +162,51 @@ object DuckDbConnectionFactory {
            |);
         """.stripMargin.trim
       } else if (isAzure) {
+        logger.info(s"Taking AZURE path for ${profile.storageProfileId}")
         val storageAccount = extractStorageAccountFromEndpoint(profile.endpoint)
         
-        logger.debug(
-          s"Creating Azure secret for ${profile.storageProfileId} " +
-            s"bucket=${profile.bucket}, region=${profile.region}, " +
-            s"storageAccount=$storageAccount"
-        )
+        // Check for Azure service principal credentials in environment
+        val azureClientId = sys.env.get("AZURE_CLIENT_ID")
+        val azureClientSecret = sys.env.get("AZURE_CLIENT_SECRET") 
+        val azureTenantId = sys.env.get("AZURE_TENANT_ID")
         
-        s"""
-           |CREATE OR REPLACE SECRET secret_$secretSuffix (
-           |  TYPE azure,
-           |  PROVIDER credential_chain,
-           |  ACCOUNT_NAME '$storageAccount',
-           |  SCOPE 'az://${profile.bucket}/'
-           |);
-        """.stripMargin.trim
+        val sql = if (azureClientId.isDefined && azureClientSecret.isDefined && azureTenantId.isDefined) {
+          logger.info(
+            s"Creating Azure secret for ${profile.storageProfileId} using service_principal " +
+              s"bucket=${profile.bucket}, storageAccount=$storageAccount, " +
+              s"clientId=${azureClientId.get.take(8)}..."
+          )
+          
+          s"""
+             |CREATE OR REPLACE SECRET secret_$secretSuffix (
+             |  TYPE azure,
+             |  PROVIDER service_principal,
+             |  TENANT_ID '${azureTenantId.get}',
+             |  CLIENT_ID '${azureClientId.get}',
+             |  CLIENT_SECRET '${azureClientSecret.get}',
+             |  ACCOUNT_NAME '$storageAccount',
+             |  SCOPE 'az://${profile.bucket}/'
+             |);
+          """.stripMargin.trim
+        } else {
+          logger.warn(
+            s"Azure service principal credentials not found in environment for ${profile.storageProfileId}. " +
+              s"Falling back to credential_chain which may not work with DuckDB."
+          )
+          
+          s"""
+             |CREATE OR REPLACE SECRET secret_$secretSuffix (
+             |  TYPE azure,
+             |  PROVIDER credential_chain,
+             |  ACCOUNT_NAME '$storageAccount',
+             |  SCOPE 'az://${profile.bucket}/'
+             |);
+          """.stripMargin.trim
+        }
+        
+        sql
       } else {
+        logger.info(s"Taking AWS/S3 path for ${profile.storageProfileId}")
         val creds    = credentialsCache.getCredentials(profile.role, profile.organizationId)
         var endpoint = profile.endpoint.filter(_.nonEmpty)
           .getOrElse(s"s3.${profile.region}.amazonaws.com")
