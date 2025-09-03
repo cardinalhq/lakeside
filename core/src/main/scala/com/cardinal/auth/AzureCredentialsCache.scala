@@ -63,21 +63,15 @@ class AzureCredentialsCache {
     sync = true
   )
   def getDuckDbCredentials(storageAccount: String, organizationId: String): Option[(String, String, String)] = {
-    logger.debug(s"Loading Azure credentials for DuckDB - storageAccount: $storageAccount, org: $organizationId")
-    
     val clientId = sys.env.get("AZURE_CLIENT_ID")
     val clientSecret = sys.env.get("AZURE_CLIENT_SECRET")
     val tenantId = sys.env.get("AZURE_TENANT_ID")
     
     (clientId, clientSecret, tenantId) match {
       case (Some(id), Some(secret), Some(tenant)) =>
-        logger.debug(s"✓ Found cached Azure DuckDB credentials for storage account: $storageAccount")
         Some((id, secret, tenant))
       case _ =>
-        logger.warn(s"Missing Azure environment variables for storage account: $storageAccount")
-        logger.warn(s"  AZURE_CLIENT_ID: ${clientId.isDefined}")
-        logger.warn(s"  AZURE_CLIENT_SECRET: ${clientSecret.isDefined}")
-        logger.warn(s"  AZURE_TENANT_ID: ${tenantId.isDefined}")
+        logger.warn(s"Missing Azure environment variables for $storageAccount")
         None
     }
   }

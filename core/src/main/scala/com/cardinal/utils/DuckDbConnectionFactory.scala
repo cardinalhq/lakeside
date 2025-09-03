@@ -147,8 +147,6 @@ object DuckDbConnectionFactory {
 
       val isGcp = profile.cloudProvider == STORAGE_PROFILE_CLOUD_PROVIDER_GOOGLE
       val isAzure = profile.cloudProvider == STORAGE_PROFILE_CLOUD_PROVIDER_AZURE
-      
-      logger.info(s"Profile ${profile.storageProfileId}: isGcp=$isGcp, isAzure=$isAzure, cloudProvider='${profile.cloudProvider}'")
 
       val sql = if (isGcp) {
         logger.info(s"Taking GCP path for ${profile.storageProfileId}")
@@ -164,33 +162,23 @@ object DuckDbConnectionFactory {
            |);
         """.stripMargin.trim
       } else if (isAzure) {
-        logger.info(s"Taking AZURE path for ${profile.storageProfileId}")
         val storageAccount = extractStorageAccountFromEndpoint(profile.endpoint)
         
-        // Get Azure credentials through cache (similar to AWS pattern)
-        logger.debug(s"Getting cached Azure credentials for storage account: $storageAccount")
         val (azureClientId, azureClientSecret, azureTenantId) = try {
           azureCredentialsCache.getDuckDbCredentials(storageAccount, profile.organizationId) match {
             case Some((clientId, clientSecret, tenantId)) =>
-              logger.debug(s"✓ Using cached Azure credentials for $storageAccount")
               (Some(clientId), Some(clientSecret), Some(tenantId))
             case None =>
-              logger.debug("No cached Azure credentials found, this should not happen if env vars are set")
               (None, None, None)
           }
         } catch {
           case e: Exception =>
             logger.warn(s"Failed to get Azure credentials from cache: ${e.getMessage}")
-            // Fallback to direct environment read
             (sys.env.get("AZURE_CLIENT_ID"), sys.env.get("AZURE_CLIENT_SECRET"), sys.env.get("AZURE_TENANT_ID"))
         }
         
         val sql = (azureClientId, azureClientSecret, azureTenantId) match {
           case (Some(clientId), Some(clientSecret), Some(tenantId)) =>
-            logger.info(
-              s"Creating Azure secret for ${profile.storageProfileId} using service_principal " +
-                s"bucket=${profile.bucket}, storageAccount=$storageAccount"
-            )
             s"""
                |CREATE OR REPLACE SECRET secret_$secretSuffix (
                |  TYPE azure,
@@ -202,9 +190,7 @@ object DuckDbConnectionFactory {
                |);
             """.stripMargin.trim
           case _ =>
-            logger.info(
-              s"Missing Azure service principal env vars - using credential_chain for ${profile.storageProfileId}"
-            )
+            logger.warn(s"Missing Azure credentials - falling back to credential_chain for ${profile.storageProfileId}")
             s"""
                |CREATE OR REPLACE SECRET secret_$secretSuffix (
                |  TYPE azure,
