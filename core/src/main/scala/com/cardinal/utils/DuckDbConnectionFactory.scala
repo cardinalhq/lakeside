@@ -17,7 +17,7 @@
 package com.cardinal.utils
 
 import com.amazonaws.auth.BasicSessionCredentials
-import com.cardinal.auth.AwsCredentialsCache
+import com.cardinal.auth.{AwsCredentialsCache, AzureCredentialsCache}
 import com.cardinal.auth.AwsCredentialsCache.CREDENTIALS_VALIDITY_SECONDS
 import com.cardinal.config.StorageProfileCache
 import com.cardinal.core.Environment
@@ -35,6 +35,7 @@ case class ExpiringConnection(connection: DuckDBConnection, expirationTime: Inst
 object DuckDbConnectionFactory {
   private val logger = LoggerFactory.getLogger(getClass)
   private[utils] lazy val credentialsCache: AwsCredentialsCache = SpringContextUtil.getBean(classOf[AwsCredentialsCache])
+  private[utils] lazy val azureCredentialsCache: AzureCredentialsCache = SpringContextUtil.getBean(classOf[AzureCredentialsCache])
 
   private[utils] var storageProfileCache =  SpringContextUtil.getBean(classOf[StorageProfileCache])
 
@@ -166,43 +167,38 @@ object DuckDbConnectionFactory {
         logger.info(s"Taking AZURE path for ${profile.storageProfileId}")
         val storageAccount = extractStorageAccountFromEndpoint(profile.endpoint)
         
-        // Check for Azure service principal credentials in environment
+        // Get Azure credentials from environment (DuckDB needs them directly)
         val azureClientId = sys.env.get("AZURE_CLIENT_ID")
         val azureClientSecret = sys.env.get("AZURE_CLIENT_SECRET") 
         val azureTenantId = sys.env.get("AZURE_TENANT_ID")
         
-        val sql = if (azureClientId.isDefined && azureClientSecret.isDefined && azureTenantId.isDefined) {
-          logger.info(
-            s"Creating Azure secret for ${profile.storageProfileId} using service_principal " +
-              s"bucket=${profile.bucket}, storageAccount=$storageAccount, " +
-              s"clientId=${azureClientId.get.take(8)}..."
-          )
-          
-          s"""
-             |CREATE OR REPLACE SECRET secret_$secretSuffix (
-             |  TYPE azure,
-             |  PROVIDER service_principal,
-             |  TENANT_ID '${azureTenantId.get}',
-             |  CLIENT_ID '${azureClientId.get}',
-             |  CLIENT_SECRET '${azureClientSecret.get}',
-             |  ACCOUNT_NAME '$storageAccount',
-             |  SCOPE 'azure://${profile.bucket}/'
-             |);
-          """.stripMargin.trim
-        } else {
-          logger.warn(
-            s"Azure service principal credentials not found in environment for ${profile.storageProfileId}. " +
-              s"Falling back to credential_chain which may not work with DuckDB."
-          )
-          
-          s"""
-             |CREATE OR REPLACE SECRET secret_$secretSuffix (
-             |  TYPE azure,
-             |  PROVIDER credential_chain,
-             |  ACCOUNT_NAME '$storageAccount',
-             |  SCOPE 'azure://${profile.bucket}/'
-             |);
-          """.stripMargin.trim
+        val sql = (azureClientId, azureClientSecret, azureTenantId) match {
+          case (Some(clientId), Some(clientSecret), Some(tenantId)) =>
+            logger.info(
+              s"Creating Azure secret for ${profile.storageProfileId} using service_principal " +
+                s"bucket=${profile.bucket}, storageAccount=$storageAccount"
+            )
+            s"""
+               |CREATE OR REPLACE SECRET secret_$secretSuffix (
+               |  TYPE azure,
+               |  PROVIDER service_principal,
+               |  TENANT_ID '$tenantId',
+               |  CLIENT_ID '$clientId',
+               |  CLIENT_SECRET '$clientSecret',
+               |  ACCOUNT_NAME '$storageAccount'
+               |);
+            """.stripMargin.trim
+          case _ =>
+            logger.info(
+              s"Missing Azure service principal env vars - using credential_chain for ${profile.storageProfileId}"
+            )
+            s"""
+               |CREATE OR REPLACE SECRET secret_$secretSuffix (
+               |  TYPE azure,
+               |  PROVIDER credential_chain,
+               |  ACCOUNT_NAME '$storageAccount'
+               |);
+            """.stripMargin.trim
         }
         
         sql
