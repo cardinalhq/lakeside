@@ -171,40 +171,22 @@ object DuckDbConnectionFactory {
         val azureClientSecret = sys.env.get("AZURE_CLIENT_SECRET") 
         val azureTenantId = sys.env.get("AZURE_TENANT_ID")
         
-        val sql = if (azureClientId.isDefined && azureClientSecret.isDefined && azureTenantId.isDefined) {
-          logger.info(
-            s"Creating Azure secret for ${profile.storageProfileId} using service_principal " +
-              s"bucket=${profile.bucket}, storageAccount=$storageAccount, " +
-              s"clientId=${azureClientId.get.take(8)}..."
-          )
-          
-          s"""
-             |CREATE OR REPLACE SECRET secret_$secretSuffix (
-             |  TYPE azure,
-             |  PROVIDER service_principal,
-             |  TENANT_ID '${azureTenantId.get}',
-             |  CLIENT_ID '${azureClientId.get}',
-             |  CLIENT_SECRET '${azureClientSecret.get}',
-             |  ACCOUNT_NAME '$storageAccount',
-             |  SCOPE 'az://${profile.bucket}/'
-             |);
-          """.stripMargin.trim
-        } else {
-          logger.warn(
-            s"Azure service principal credentials not found in environment for ${profile.storageProfileId}. " +
-              s"Falling back to credential_chain which may not work with DuckDB."
-          )
-          
-          s"""
-             |CREATE OR REPLACE SECRET secret_$secretSuffix (
-             |  TYPE azure,
-             |  PROVIDER credential_chain,
-             |  ACCOUNT_NAME '$storageAccount',
-             |  SCOPE 'az://${profile.bucket}/'
-             |);
-          """.stripMargin.trim
-        }
+        // Use credential_chain as primary method since it works better with DuckDB + curl transport
+        logger.info(
+          s"Creating Azure secret for ${profile.storageProfileId} using credential_chain " +
+            s"bucket=${profile.bucket}, storageAccount=$storageAccount"
+        )
         
+        val sql = s"""
+           |CREATE OR REPLACE SECRET secret_$secretSuffix (
+           |  TYPE azure,
+           |  PROVIDER credential_chain,
+           |  ACCOUNT_NAME '$storageAccount',
+           |  SCOPE 'az://${profile.bucket}/'
+           |);
+          """.stripMargin.trim
+        
+        logger.info(s"Executing Azure secret SQL: $sql")
         sql
       } else {
         logger.info(s"Taking AWS/S3 path for ${profile.storageProfileId}")
