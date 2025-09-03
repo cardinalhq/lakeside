@@ -92,6 +92,7 @@ object DuckDbConnectionFactory {
         statement.executeUpdate("LOAD httpfs")
         statement.executeUpdate("INSTALL '/app/libs/azure.duckdb_extension'")
         statement.executeUpdate("LOAD azure")
+        statement.executeUpdate("SET azure_transport_option_type = 'curl'")
         statement.executeUpdate(s"SET memory_limit='${DUCKDB_MEMORY_LIMIT}'")
         statement.executeUpdate("SET temp_directory = '/db/duckdb_swap'")
         statement.executeUpdate("SET max_temp_directory_size = '5GB'")
