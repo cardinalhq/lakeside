@@ -210,8 +210,7 @@ object DuckDbConnectionFactory {
                |  TENANT_ID '$tenantId',
                |  CLIENT_ID '$clientId',
                |  CLIENT_SECRET '$clientSecret',
-               |  ACCOUNT_NAME '$storageAccount',
-               |  SCOPE 'az://${profile.bucket}/'
+               |  ACCOUNT_NAME '$storageAccount'
                |);
             """.stripMargin.trim
             logger.info(s"Generated service_principal SQL for secret_$secretSuffix:")
@@ -227,8 +226,7 @@ object DuckDbConnectionFactory {
                |CREATE OR REPLACE SECRET secret_$secretSuffix (
                |  TYPE azure,
                |  PROVIDER credential_chain,
-               |  ACCOUNT_NAME '$storageAccount',
-               |  SCOPE 'az://${profile.bucket}/'
+               |  ACCOUNT_NAME '$storageAccount'
                |);
             """.stripMargin.trim
             logger.info(s"Generated credential_chain SQL for secret_$secretSuffix:")
@@ -237,7 +235,7 @@ object DuckDbConnectionFactory {
         }
         
         logger.info(s"About to execute Azure secret creation SQL for profile ${profile.storageProfileId}")
-        sql
+``        sql
       } else {
         logger.info(s"Taking AWS/S3 path for ${profile.storageProfileId}")
         val creds    = credentialsCache.getCredentials(profile.role, profile.organizationId)
