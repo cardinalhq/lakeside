@@ -80,6 +80,11 @@ dependencies {
     implementation 'software.amazon.awssdk:ecs:2.20.109'
     implementation "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml"
 
+    // Azure SDK dependencies
+    implementation 'com.azure:azure-storage-blob:12.23.0'
+    implementation 'com.azure:azure-identity:1.10.4'
+    implementation 'com.azure:azure-core:1.45.0'
+
     implementation "org.scala-lang:scala-library:$scalaFullVersion"
     implementation "org.scala-lang:scala-reflect:$scalaFullVersion"
     implementation "org.duckdb:duckdb_jdbc:$duckDbVersion"
